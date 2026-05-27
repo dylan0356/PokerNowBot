@@ -14,6 +14,7 @@ import { trackTable } from "./service.js";
 
 const config = readConfig();
 const logger = createLogger("tracker-worker", config.logLevel);
+const tableWorkerConcurrency = Number(process.env.TRACKER_TABLE_CONCURRENCY ?? "10");
 
 const tableWorker = new Worker<TrackTableJob>(
   queueNames.trackTable,
@@ -23,11 +24,12 @@ const tableWorker = new Worker<TrackTableJob>(
   },
   {
     connection: toBullConnection(config.redisUrl),
+    concurrency: tableWorkerConcurrency,
   },
 );
 
 tableWorker.on("ready", () => {
-  logger.info({ queue: queueNames.trackTable }, "Tracker table worker ready");
+  logger.info({ queue: queueNames.trackTable, concurrency: tableWorkerConcurrency }, "Tracker table worker ready");
 });
 
 tableWorker.on("error", (error) => {

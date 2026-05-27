@@ -29,9 +29,8 @@ export async function refreshStatsForGuild(guildId: string) {
   }));
 
   const dimensions = deriveStatsDimensions(reconstructedHands);
-
-  for (const profile of profiles) {
-    const snapshotRows = dimensions.map((dimension) => {
+  const snapshotRows = profiles.flatMap((profile) =>
+    dimensions.map((dimension) => {
       const dimensionHandIds = new Set(filterHandsForDimension(reconstructedHands, dimension).map((hand) => hand.handId));
       const relevantEntries = hands.flatMap((hand) =>
         dimensionHandIds.has(hand.id)
@@ -72,20 +71,23 @@ export async function refreshStatsForGuild(guildId: string) {
         biggestPunt: stats.biggestPunt,
         biggestPuntBb: stats.biggestPuntBb,
       };
-    });
+    }),
+  );
 
-    await prisma.$transaction([
-      prisma.statsSnapshot.deleteMany({
-        where: {
-          guildId,
-          playerProfileId: profile.id,
-        },
-      }),
-      prisma.statsSnapshot.createMany({
-        data: snapshotRows,
-      }),
-    ]);
-  }
+  await prisma.$transaction([
+    prisma.statsSnapshot.deleteMany({
+      where: {
+        guildId,
+      },
+    }),
+    ...(snapshotRows.length > 0
+      ? [
+          prisma.statsSnapshot.createMany({
+            data: snapshotRows,
+          }),
+        ]
+      : []),
+  ]);
 }
 
 interface ProfileHandEntry {

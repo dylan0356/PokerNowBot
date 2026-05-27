@@ -21,6 +21,7 @@
     "db:migrate": "prisma migrate dev --schema packages/db/prisma/schema.prisma",
     "db:migrate:deploy": "prisma migrate deploy --schema packages/db/prisma/schema.prisma",
     "import:pokernow-csv": "tsx scripts/import-pokernow-csv.ts",
+    "backfill:pokernow-live": "tsx scripts/backfill-pokernow-live.ts",
     "rebuild:pokernow-hands": "tsx scripts/rebuild-pokernow-hands.ts",
     "test": "node --import tsx --test tests/**/*.test.ts"
   },
