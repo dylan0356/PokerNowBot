@@ -157,7 +157,7 @@ function parsePlayerStacks(hand: MutableHand, message: string) {
 }
 
 function parseBlind(hand: MutableHand, entry: PokerNowLogEntry) {
-  const match = entry.msg.match(/^"(.+)" posts a (?:(missing|missed) )?(small|big) blind of ([\d.]+)$/);
+  const match = entry.msg.trim().match(/^"(.+)" posts a (?:(missing|missed) )?(small|big) blind of ([\d.]+)(?: and go all in)?$/);
   if (!match) {
     return false;
   }

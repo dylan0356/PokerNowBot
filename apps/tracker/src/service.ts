@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@pokernow/db";
 import { Queue } from "bullmq";
 import { createLogger, queueNames, readConfig, toBullConnection } from "@pokernow/shared";
@@ -51,7 +52,7 @@ export async function trackTable(job: TrackTableJob) {
   let lastQueuedCompletedHandNumber: number | undefined;
   let lastKnownPlayersCount: number | undefined;
   let idleTimer: NodeJS.Timeout | undefined;
-  let client: PokerNowRealtimeClient;
+  let client: PokerNowRealtimeClient | undefined;
   const cookieHeader = await bootstrapPokerNowCookieHeader(
     config.pokernowBaseUrl,
     job.tableId,
@@ -78,13 +79,29 @@ export async function trackTable(job: TrackTableJob) {
       },
     };
 
-    await persistRawEvent(session.id, event);
-    await prisma.trackedTable.update({
-      where: { id: trackedTable.id },
-      data: {
-        lastHeartbeatAt: new Date(occurredAt),
-      },
-    });
+    try {
+      await persistRawEvent(session.id, event);
+      await prisma.trackedTable.update({
+        where: { id: trackedTable.id },
+        data: {
+          lastHeartbeatAt: new Date(occurredAt),
+        },
+      });
+    } catch (error) {
+      if (!isDeletedTrackingRecordError(error)) {
+        throw error;
+      }
+
+      logger.info(
+        {
+          tableId: job.tableId,
+          trackedTableId: trackedTable.id,
+          trackingSessionId: session.id,
+        },
+        "Stopping PokerNow tracking because tracked table/session was removed",
+      );
+      client?.disconnect();
+    }
   };
 
   const enqueueReconcile = async (handNumber?: number) => {
@@ -118,7 +135,7 @@ export async function trackTable(job: TrackTableJob) {
         },
         "Ending PokerNow tracking after heartbeat timeout",
       );
-      client.disconnect();
+      client?.disconnect();
     }, config.pokernowHeartbeatTimeoutMs);
   };
 
@@ -219,7 +236,7 @@ export async function trackTable(job: TrackTableJob) {
           previousFrameNow !== lastKnownFrameNow
         ) {
           logger.warn({ tableId: job.tableId, previousFrameNow, lastKnownFrameNow }, "Detected PokerNow frame gap, requesting resync");
-          client.requestResync();
+          client?.requestResync();
         }
 
         lastKnownFrameNow = extractNumericField(payload, "now") ?? lastKnownFrameNow;
@@ -294,14 +311,14 @@ export async function trackTable(job: TrackTableJob) {
       clearTimeout(idleTimer);
     }
 
-    await prisma.trackedTable.update({
+    await prisma.trackedTable.updateMany({
       where: { id: trackedTable.id },
       data: {
         state: "ENDED",
         endedAt: new Date(),
       },
     });
-    await prisma.trackingSession.update({
+    await prisma.trackingSession.updateMany({
       where: { id: session.id },
       data: {
         status: "ENDED",
@@ -312,11 +329,23 @@ export async function trackTable(job: TrackTableJob) {
     if (idleTimer) {
       clearTimeout(idleTimer);
     }
-    await prisma.trackedTable.update({
+    if (isDeletedTrackingRecordError(error)) {
+      logger.info(
+        {
+          tableId: job.tableId,
+          trackedTableId: trackedTable.id,
+          trackingSessionId: session.id,
+        },
+        "Tracking stopped after tracked table/session was removed",
+      );
+      return;
+    }
+
+    await prisma.trackedTable.updateMany({
       where: { id: trackedTable.id },
       data: { state: "FAILED" },
     });
-    await prisma.trackingSession.update({
+    await prisma.trackingSession.updateMany({
       where: { id: session.id },
       data: {
         status: "FAILED",
@@ -325,6 +354,14 @@ export async function trackTable(job: TrackTableJob) {
     });
     throw error;
   }
+}
+
+function isDeletedTrackingRecordError(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+    return false;
+  }
+
+  return error.code === "P2003" || error.code === "P2025";
 }
 
 interface PokerNowPayloadSummary {

@@ -188,6 +188,28 @@ test("parsePokerNowHandsFromLogs counts missed and missing blind posts", () => {
   assert.equal(bob?.profit, 4.5);
 });
 
+test("parsePokerNowHandsFromLogs counts all-in blind posts with trailing whitespace", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "-- ending hand #63 --", createdAt: "177982150477705" },
+    { msg: "\"Anton @ 9XnRvBoWhs\" collected 79.60 from pot", createdAt: "177982150477704" },
+    { msg: "\"good samaritan @ M2K9HYdLWd\" shows a A♠, A♥.", createdAt: "177982150477703" },
+    { msg: "\"Anton @ 9XnRvBoWhs\" shows a K♠, K♥.", createdAt: "177982150477702" },
+    { msg: "\"good samaritan @ M2K9HYdLWd\" raises to 39.80", createdAt: "177982150477701" },
+    { msg: "\"Anton @ 9XnRvBoWhs\" posts a big blind of 39.80 and go all in ", createdAt: "177982150477700" },
+    { msg: "Player stacks: #1 \"good samaritan @ M2K9HYdLWd\" (305.21) | #2 \"Anton @ 9XnRvBoWhs\" (39.80)", createdAt: "177982150477699" },
+    { msg: "-- starting hand #63 (id: huceommgpw3t)  No Limit Hold'em (dealer: \"good samaritan @ M2K9HYdLWd\") --", createdAt: "177982150477698" },
+  ];
+
+  const hand = parsePokerNowHandsFromLogs("table-1", entries)[0];
+  const goodSamaritan = hand.players.find((player) => player.playerAlias === "good samaritan @ M2K9HYdLWd");
+  const anton = hand.players.find((player) => player.playerAlias === "Anton @ 9XnRvBoWhs");
+
+  assert.equal(round(hand.players.reduce((sum, player) => sum + player.profit, 0)), 0);
+  assert.equal(hand.potSize, 79.6);
+  assert.equal(goodSamaritan?.profit, -39.8);
+  assert.equal(anton?.profit, 39.8);
+});
+
 test("parsePokerNowHandsFromLogs merges a player id change inside a hand", () => {
   const entries: PokerNowLogEntry[] = [
     { msg: "-- ending hand #4 --", createdAt: "177982150477735" },
