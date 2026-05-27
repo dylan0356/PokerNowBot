@@ -665,9 +665,9 @@ export class CommandService {
     const labels: string[] = [];
     const series: number[] = [];
 
-    for (const handPlayer of handPlayers) {
+    for (const [index, handPlayer] of handPlayers.entries()) {
       runningProfit += Number(handPlayer.profit);
-      labels.push(handPlayer.hand.finishedAt.toISOString().slice(0, 10));
+      labels.push(String(index + 1));
       series.push(Number(runningProfit.toFixed(2)));
     }
 

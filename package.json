@@ -23,6 +23,7 @@
     "import:pokernow-csv": "tsx scripts/import-pokernow-csv.ts",
     "backfill:pokernow-live": "tsx scripts/backfill-pokernow-live.ts",
     "rebuild:pokernow-hands": "tsx scripts/rebuild-pokernow-hands.ts",
+    "reset:tracking": "tsx scripts/reset-tracking.ts",
     "test": "node --import tsx --test tests/**/*.test.ts"
   },
   "dependencies": {

@@ -62,9 +62,6 @@ const commands = [
     .setDescription("Show players currently observed on tracked PokerNow tables")
     .addStringOption((option) => option.setName("table_id").setDescription("PokerNow table id").setRequired(false)),
   new SlashCommandBuilder().setName("tracking-status").setDescription("Show PokerNow tracking status for this server"),
-  new SlashCommandBuilder()
-    .setName("tracking-reset")
-    .setDescription("Delete all PokerNow tracking for this server"),
   new SlashCommandBuilder().setName("tracking-debug").setDescription("Show queue and tracking debug info for this server"),
   new SlashCommandBuilder()
     .setName("player-create")
@@ -119,6 +116,7 @@ export async function registerSlashCommands(token: string, clientId: string, gui
     return;
   }
 
+  await rest.put(Routes.applicationCommands(clientId), { body: [] });
   for (const guildId of guildIds) {
     await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
   }
@@ -299,22 +297,6 @@ async function routeCommand(interaction: ChatInputCommandInteraction, commandSer
           .join("\n");
 
         await interaction.reply(body);
-        return;
-      }
-      case "tracking-reset": {
-        if (!isAdminUser(interaction.user.id) && !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-          await interaction.reply({
-            content: "You need `Manage Server` to use this command",
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        const removedCount = await commandService.resetTracking(guildId, redisUrl);
-        await interaction.reply({
-          content: `Removed PokerNow tracking for ${removedCount} table(s) in this server`,
-          flags: MessageFlags.Ephemeral,
-        });
         return;
       }
       case "tracking-debug": {
@@ -620,8 +602,8 @@ async function replyWithReactionPages(interaction: ChatInputCommandInteraction, 
   await message.react("➡️").catch(() => undefined);
 
   const collector = message.createReactionCollector({
-    filter: (reaction, user) => ["⬅️", "➡️"].includes(reaction.emoji.name ?? "") && user.id === interaction.user.id,
-    time: 120_000,
+    filter: (reaction, user) => ["⬅️", "➡️"].includes(reaction.emoji.name ?? "") && !user.bot,
+    time: 600_000,
   });
 
   collector.on("collect", async (reaction, user) => {

@@ -17,7 +17,9 @@ const logger = createLogger("workers", config.logLevel);
 new Worker<RefreshStatsJob>(
   queueNames.refreshStats,
   async (job) => {
+    logger.info({ guildId: job.data.guildId, jobId: job.id }, "Starting stats refresh");
     await refreshStatsForGuild(job.data.guildId);
+    logger.info({ guildId: job.data.guildId, jobId: job.id }, "Finished stats refresh");
   },
   { connection: toBullConnection(config.redisUrl) },
 ).on("failed", (job, error) => {

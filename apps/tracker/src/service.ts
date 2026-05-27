@@ -177,7 +177,7 @@ export async function trackTable(job: TrackTableJob) {
       if (summary.handNumber !== undefined && summary.handNumber !== lastObservedHandNumber) {
         const previousObservedHandNumber = lastObservedHandNumber;
         lastObservedHandNumber = summary.handNumber;
-        logger.info(
+        logger.debug(
           {
             tableId: job.tableId,
             handNumber: summary.handNumber,
@@ -192,7 +192,7 @@ export async function trackTable(job: TrackTableJob) {
           previousObservedHandNumber !== lastQueuedCompletedHandNumber
         ) {
           lastQueuedCompletedHandNumber = previousObservedHandNumber;
-          logger.info(
+          logger.debug(
             {
               tableId: job.tableId,
               completedHandNumber: previousObservedHandNumber,
@@ -224,7 +224,7 @@ export async function trackTable(job: TrackTableJob) {
 
         lastKnownFrameNow = extractNumericField(payload, "now") ?? lastKnownFrameNow;
         if (isHandResult(payload)) {
-          logger.info(
+          logger.debug(
             {
               tableId: job.tableId,
               handNumber: summary.handNumber ?? lastObservedHandNumber,

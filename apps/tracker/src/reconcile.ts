@@ -8,12 +8,13 @@ import { persistHand, persistRawEvent } from "./persistence.js";
 
 const config = readConfig();
 const logger = createLogger("tracker-reconcile", config.logLevel);
+const refreshStatsDelayMs = Number(process.env.REFRESH_STATS_DELAY_MS ?? "180000");
 
 export async function reconcileLatestPokerNowHands(
   job: ReconcilePokerNowHandJob,
   options: { baseUrl: string; cookieHeader?: string; redisUrl: string },
 ) {
-  logger.info({ tableId: job.tableId, handNumber: job.handNumber }, "Starting PokerNow reconcile");
+  logger.debug({ tableId: job.tableId, handNumber: job.handNumber }, "Starting PokerNow reconcile");
   const refreshStatsQueue = new Queue(queueNames.refreshStats, {
     connection: toBullConnection(options.redisUrl),
   });
@@ -52,9 +53,18 @@ export async function reconcileLatestPokerNowHands(
   }
 
   if (insertedHands > 0) {
-    await refreshStatsQueue.add("refresh-stats", {
-      guildId: job.guildId,
-    });
+    await refreshStatsQueue.add(
+      "refresh-stats",
+      {
+        guildId: job.guildId,
+      },
+      {
+        jobId: `refresh-stats-${job.guildId}`,
+        delay: refreshStatsDelayMs,
+        removeOnComplete: true,
+        removeOnFail: 100,
+      },
+    );
   }
 
   logger.info(
@@ -65,6 +75,7 @@ export async function reconcileLatestPokerNowHands(
       parsedHands: hands.length,
       insertedHands,
       lastInsertedHandNumber,
+      refreshStatsDelayMs: insertedHands > 0 ? refreshStatsDelayMs : undefined,
     },
     "Finished PokerNow reconcile",
   );

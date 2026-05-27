@@ -283,7 +283,6 @@ User commands:
 
 Admin commands:
 
-- `/tracking-reset`: delete all PokerNow tracking for this Discord server
 - `/tracking-debug`: show BullMQ queue/debug state
 - `/player-create user:<user> [display_name:<name>]`: create or update a Discord player's display name
 - `/player-alias-add user:<user> alias:<alias>`: assign one or more default alias owners; comma-separated aliases are supported
