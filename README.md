@@ -283,6 +283,7 @@ User commands:
 
 Admin commands:
 
+- `/tracking-remove table_id:<id-or-link>`: owner-only destructive removal for one tracked table and its stored data
 - `/tracking-debug`: show BullMQ queue/debug state
 - `/player-create user:<user> [display_name:<name>]`: create or update a Discord player's display name
 - `/player-alias-add user:<user> alias:<alias>`: assign one or more default alias owners; comma-separated aliases are supported

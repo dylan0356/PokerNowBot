@@ -62,6 +62,10 @@ const commands = [
     .setDescription("Show players currently observed on tracked PokerNow tables")
     .addStringOption((option) => option.setName("table_id").setDescription("PokerNow table id").setRequired(false)),
   new SlashCommandBuilder().setName("tracking-status").setDescription("Show PokerNow tracking status for this server"),
+  new SlashCommandBuilder()
+    .setName("tracking-remove")
+    .setDescription("Owner-only: delete one tracked PokerNow table and all of its data")
+    .addStringOption((option) => option.setName("table_id").setDescription("PokerNow game link or table id").setRequired(true)),
   new SlashCommandBuilder().setName("tracking-debug").setDescription("Show queue and tracking debug info for this server"),
   new SlashCommandBuilder()
     .setName("player-create")
@@ -297,6 +301,30 @@ async function routeCommand(interaction: ChatInputCommandInteraction, commandSer
           .join("\n");
 
         await interaction.reply(body);
+        return;
+      }
+      case "tracking-remove": {
+        if (!isAdminUser(interaction.user.id)) {
+          await interaction.reply({
+            content: "Only the bot owner can use this command",
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const tableInput = interaction.options.getString("table_id", true);
+        const tableId = tableIdFromInput(tableInput);
+        const result = await commandService.removeTrackedTable(guildId, tableId, redisUrl);
+        await interaction.reply({
+          content: result.removed
+            ? [
+                `Removed tracked table \`${tableId}\` and cascaded its stored sessions/hands.`,
+                `track-table job: ${result.trackJobState ?? "not found"}${result.removedTrackJob ? " removed" : ""}`,
+                `removed pending reconcile jobs: ${result.removedReconcileJobs}`,
+              ].join("\n")
+            : `No tracked table found for \`${tableId}\``,
+          flags: MessageFlags.Ephemeral,
+        });
         return;
       }
       case "tracking-debug": {

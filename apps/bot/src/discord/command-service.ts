@@ -814,6 +814,48 @@ export class CommandService {
     return deleted.count;
   }
 
+  async removeTrackedTable(guildId: string, tableId: string, redisUrl: string) {
+    const queueConnection = toBullConnection(redisUrl);
+    const trackQueue = new Queue(queueNames.trackTable, { connection: queueConnection });
+    const reconcileQueue = new Queue(queueNames.reconcilePokerNowHand, { connection: queueConnection });
+
+    const trackJobId = `track-${guildId}-${tableId}`;
+    const trackJob = await trackQueue.getJob(trackJobId);
+    const trackJobState = trackJob ? await trackJob.getState() : null;
+    let removedTrackJob = false;
+
+    if (trackJob && trackJobState !== "active") {
+      await trackJob.remove();
+      removedTrackJob = true;
+    }
+
+    const reconcileJobs = await reconcileQueue.getJobs(["waiting", "delayed", "failed"], 0, 1000, false);
+    let removedReconcileJobs = 0;
+    for (const job of reconcileJobs) {
+      if (job.data?.guildId === guildId && job.data?.tableId === tableId) {
+        await job.remove();
+        removedReconcileJobs += 1;
+      }
+    }
+
+    const deleted = await prisma.trackedTable.deleteMany({
+      where: {
+        guildId,
+        tableId,
+      },
+    });
+
+    await trackQueue.close();
+    await reconcileQueue.close();
+
+    return {
+      removed: deleted.count > 0,
+      removedTrackJob,
+      trackJobState,
+      removedReconcileJobs,
+    };
+  }
+
   async getTrackingDebug(guildId: string, redisUrl: string) {
     const queueConnection = toBullConnection(redisUrl);
     const trackQueue = new Queue(queueNames.trackTable, { connection: queueConnection });
