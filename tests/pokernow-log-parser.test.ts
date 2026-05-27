@@ -1,0 +1,222 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import type { PokerNowLogEntry } from "@pokernow/shared";
+import { parsePokerNowHandsFromLogs } from "../apps/tracker/src/parser/log-parser.js";
+
+test("parsePokerNowHandsFromLogs reconstructs a complete hand from log_v3 entries", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "-- ending hand #1 --", createdAt: "177982150477502" },
+    {
+      msg: "\"michael @ h5FgiJLsGT\" collected 6.00 from pot with Two Pair, K's & Q's (combination: 7♣, Q♠, Q♥, K♠, K♥)",
+      createdAt: "177982150477501",
+    },
+    { msg: "\"michael @ h5FgiJLsGT\" shows a 3♦, K♠, 2♠, 7♣.", createdAt: "177982150477500" },
+    { msg: "\"ridley @ U-9YrwDlW3\" checks", createdAt: "177982150390100" },
+    { msg: "\"michael @ h5FgiJLsGT\" checks", createdAt: "177982150254900" },
+    { msg: "River: 8♥, 6♣, Q♠, Q♥ [K♥]", createdAt: "177982149957600" },
+    { msg: "\"ridley @ U-9YrwDlW3\" checks", createdAt: "177982149873900" },
+    { msg: "\"michael @ h5FgiJLsGT\" checks", createdAt: "177982149550400" },
+    { msg: "Turn: 8♥, 6♣, Q♠ [Q♥]", createdAt: "177982149336000" },
+    { msg: "\"ridley @ U-9YrwDlW3\" checks", createdAt: "177982149252800" },
+    { msg: "\"michael @ h5FgiJLsGT\" checks", createdAt: "177982148349000" },
+    { msg: "Flop:  [8♥, 6♣, Q♠]", createdAt: "177982148143800" },
+    { msg: "\"michael @ h5FgiJLsGT\" calls 3.00", createdAt: "177982148061800" },
+    { msg: "\"ridley @ U-9YrwDlW3\" raises to 3.00", createdAt: "177982147510700" },
+    { msg: "\"michael @ h5FgiJLsGT\" posts a big blind of 1.00", createdAt: "177982146914207" },
+    { msg: "\"ridley @ U-9YrwDlW3\" posts a small blind of 0.50", createdAt: "177982146914206" },
+    { msg: "Player stacks: #1 \"ridley @ U-9YrwDlW3\" (100.00) | #2 \"michael @ h5FgiJLsGT\" (100.00)", createdAt: "177982146914203" },
+    { msg: "-- starting hand #1 (id: dql6mv4yubwk)  Pot Limit Omaha Hi (dealer: \"ridley @ U-9YrwDlW3\") --", createdAt: "177982146914200" },
+  ];
+
+  const hands = parsePokerNowHandsFromLogs("table-1", entries);
+
+  assert.equal(hands.length, 1);
+  assert.equal(hands[0].handId, "dql6mv4yubwk");
+  assert.equal(hands[0].handNumber, 1);
+  assert.equal(hands[0].gameType, "Pot Limit Omaha Hi");
+  assert.equal(hands[0].handedness, 2);
+  assert.deepEqual(hands[0].boardCards, ["8♥", "6♣", "Q♠", "Q♥", "K♥"]);
+  assert.deepEqual(hands[0].winners, ["michael @ h5FgiJLsGT"]);
+
+  const michael = hands[0].players.find((player) => player.playerAlias === "michael @ h5FgiJLsGT");
+  const ridley = hands[0].players.find((player) => player.playerAlias === "ridley @ U-9YrwDlW3");
+
+  assert.ok(michael);
+  assert.ok(ridley);
+  assert.equal(michael?.vpip, true);
+  assert.equal(michael?.pfr, false);
+  assert.equal(michael?.profit, 3);
+  assert.equal(ridley?.pfr, true);
+  assert.equal(ridley?.profit, -3);
+  assert.equal(hands[0].potSize, 6);
+});
+
+test("parsePokerNowHandsFromLogs handles uncalled bets and fold-to-turn-bet pots", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "-- ending hand #309 --", createdAt: "177983259032002" },
+    { msg: "\"ridley @ U-9YrwDlW3\" collected 28.00 from pot", createdAt: "177983259032001" },
+    { msg: "Uncalled bet of 23.00 returned to \"ridley @ U-9YrwDlW3\"", createdAt: "177983259032000" },
+    { msg: "\"michael @ Mjfl6P6jzI\" folds", createdAt: "177983258951400" },
+    { msg: "\"ridley @ U-9YrwDlW3\" bets 23.00", createdAt: "177983258760200" },
+    { msg: "\"michael @ Mjfl6P6jzI\" checks", createdAt: "177983258062300" },
+    { msg: "Turn: 7♠, Q♥, 8♥ [K♠]", createdAt: "177983257931500" },
+    { msg: "\"michael @ Mjfl6P6jzI\" calls 8.00", createdAt: "177983257848400" },
+    { msg: "\"ridley @ U-9YrwDlW3\" bets 8.00", createdAt: "177983257659500" },
+    { msg: "\"michael @ Mjfl6P6jzI\" checks", createdAt: "177983257216900" },
+    { msg: "Flop:  [7♠, Q♥, 8♥]", createdAt: "177983257027400" },
+    { msg: "\"michael @ Mjfl6P6jzI\" calls 6.00", createdAt: "177983256945400" },
+    { msg: "\"ridley @ U-9YrwDlW3\" raises to 6.00", createdAt: "177983256740400" },
+    { msg: "\"michael @ Mjfl6P6jzI\" posts a big blind of 2.00", createdAt: "177983256367805" },
+    { msg: "\"ridley @ U-9YrwDlW3\" posts a small blind of 1.00", createdAt: "177983256367804" },
+    { msg: "Player stacks: #1 \"ridley @ U-9YrwDlW3\" (645.49) | #2 \"michael @ Mjfl6P6jzI\" (650.00)", createdAt: "177983256367801" },
+    { msg: "-- starting hand #309 (id: dldaejxmoa6n)  Pot Limit Omaha Hi (dealer: \"ridley @ U-9YrwDlW3\") --", createdAt: "177983256367800" },
+  ];
+
+  const hands = parsePokerNowHandsFromLogs("table-1", entries);
+  assert.equal(hands.length, 1);
+  assert.equal(hands[0].handNumber, 309);
+  assert.equal(hands[0].potSize, 28);
+
+  const ridley = hands[0].players.find((player) => player.playerAlias === "ridley @ U-9YrwDlW3");
+  const michael = hands[0].players.find((player) => player.playerAlias === "michael @ Mjfl6P6jzI");
+
+  assert.ok(ridley);
+  assert.ok(michael);
+  assert.equal(ridley?.profit, 14);
+  assert.equal(michael?.profit, -14);
+  assert.deepEqual(hands[0].winners, ["ridley @ U-9YrwDlW3"]);
+});
+
+test("parsePokerNowHandsFromLogs counts all-in raise suffixes and run-it-twice pots", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "-- ending hand #444 --", createdAt: "177964919999999" },
+    { msg: "\"michael @ h5FgiJLsGT\" collected 716.54 from pot", createdAt: "177964919999998" },
+    { msg: "\"michael @ h5FgiJLsGT\" collected 716.54 from pot", createdAt: "177964919999997" },
+    { msg: "River: A♣, K♣, 4♥, 7♦ [2♠]", createdAt: "177964919999996" },
+    { msg: "River (second run): A♣, K♣, 4♥, 7♦ [3♠]", createdAt: "177964919999995" },
+    { msg: "\"michael @ h5FgiJLsGT\" shows a A♦, A♥, K♦, K♥.", createdAt: "177964919999994" },
+    { msg: "\"Ridley @ 9M-rjxbUl8\" shows a Q♦, Q♥, J♦, J♥.", createdAt: "177964919999993" },
+    { msg: "All players in hand choose to run it twice.", createdAt: "177964919999992" },
+    { msg: "\"michael @ h5FgiJLsGT\" chooses to run it twice.", createdAt: "177964919999991" },
+    { msg: "\"Ridley @ 9M-rjxbUl8\" chooses to run it twice.", createdAt: "177964919999990" },
+    { msg: "Remaining players decide whether to run it twice.", createdAt: "177964919999989" },
+    { msg: "\"michael @ h5FgiJLsGT\" calls 632.54", createdAt: "177964919999988" },
+    { msg: "\"Ridley @ 9M-rjxbUl8\" raises to 632.54 and go all in", createdAt: "177964919999987" },
+    { msg: "\"Ridley @ 9M-rjxbUl8\" checks", createdAt: "177964919999986" },
+    { msg: "Turn: A♣, K♣, 4♥ [7♦]", createdAt: "177964919999985" },
+    { msg: "\"Ridley @ 9M-rjxbUl8\" calls 56.00", createdAt: "177964919999984" },
+    { msg: "\"Dylan @ zYSQI6FUHX\" folds", createdAt: "177964919999983" },
+    { msg: "\"Luke @ tPKgOjVVvF\" folds", createdAt: "177964919999982" },
+    { msg: "\"michael @ h5FgiJLsGT\" raises to 56.00", createdAt: "177964919999981" },
+    { msg: "\"Ridley @ 9M-rjxbUl8\" bets 28.00", createdAt: "177964919999980" },
+    { msg: "\"Dylan @ zYSQI6FUHX\" checks", createdAt: "177964919999979" },
+    { msg: "Flop:  [A♣, K♣, 4♥]", createdAt: "177964919999978" },
+    { msg: "\"Dylan @ zYSQI6FUHX\" calls 14.00", createdAt: "177964919999977" },
+    { msg: "\"Luke @ tPKgOjVVvF\" calls 14.00", createdAt: "177964919999976" },
+    { msg: "\"michael @ h5FgiJLsGT\" calls 14.00", createdAt: "177964919999975" },
+    { msg: "\"Ridley @ 9M-rjxbUl8\" raises to 14.00", createdAt: "177964919999974" },
+    { msg: "\"Dylan @ zYSQI6FUHX\" calls 3.50", createdAt: "177964919999973" },
+    { msg: "\"Luke @ tPKgOjVVvF\" calls 3.50", createdAt: "177964919999972" },
+    { msg: "\"michael @ h5FgiJLsGT\" raises to 3.50", createdAt: "177964919999971" },
+    { msg: "\"Ridley @ 9M-rjxbUl8\" posts a big blind of 1.00", createdAt: "177964919999970" },
+    { msg: "\"Dylan @ zYSQI6FUHX\" posts a small blind of 0.50", createdAt: "177964919999969" },
+    {
+      msg: "Player stacks: #1 \"Dylan @ zYSQI6FUHX\" (100.00) | #2 \"Ridley @ 9M-rjxbUl8\" (1000.00) | #3 \"michael @ h5FgiJLsGT\" (1000.00) | #4 \"Luke @ tPKgOjVVvF\" (100.00)",
+      createdAt: "177964919999968",
+    },
+    { msg: "-- starting hand #444 (id: qu93okpmz9np)  Pot Limit Omaha Hi (dealer: \"Luke @ tPKgOjVVvF\") --", createdAt: "177964919999967" },
+  ];
+
+  const hands = parsePokerNowHandsFromLogs("table-1", entries);
+  const hand = hands[0];
+  const michael = hand.players.find((player) => player.playerAlias === "michael @ h5FgiJLsGT");
+  const ridley = hand.players.find((player) => player.playerAlias === "Ridley @ 9M-rjxbUl8");
+
+  assert.equal(hand.potSize, 1433.08);
+  assert.equal(round(hand.players.reduce((sum, player) => sum + player.profit, 0)), 0);
+  assert.equal(michael?.profit, 730.54);
+  assert.equal(ridley?.profit, -702.54);
+  assert.equal(hand.actions.some((action) => action.playerAlias === "Ridley @ 9M-rjxbUl8" && action.actionType === "raise" && action.amount === 632.54), true);
+});
+
+test("parsePokerNowHandsFromLogs counts all-in call and bet suffixes", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "-- ending hand #2 --", createdAt: "177982150477515" },
+    { msg: "\"Alice\" collected 44.00 from pot", createdAt: "177982150477514" },
+    { msg: "\"Bob\" calls 20.00 and go all in", createdAt: "177982150477513" },
+    { msg: "\"Alice\" bets 20.00 and go all in", createdAt: "177982150477512" },
+    { msg: "Flop:  [8♥, 6♣, Q♠]", createdAt: "177982150477511" },
+    { msg: "\"Bob\" calls 2.00", createdAt: "177982150477510" },
+    { msg: "\"Alice\" posts a big blind of 2.00", createdAt: "177982150477509" },
+    { msg: "\"Bob\" posts a small blind of 1.00", createdAt: "177982150477508" },
+    { msg: "Player stacks: #1 \"Alice\" (100.00) | #2 \"Bob\" (100.00)", createdAt: "177982150477507" },
+    { msg: "-- starting hand #2 (id: allin-call-bet)  No Limit Hold'em (dealer: \"Bob\") --", createdAt: "177982150477506" },
+  ];
+
+  const hand = parsePokerNowHandsFromLogs("table-1", entries)[0];
+  const alice = hand.players.find((player) => player.playerAlias === "Alice");
+  const bob = hand.players.find((player) => player.playerAlias === "Bob");
+
+  assert.equal(round(hand.players.reduce((sum, player) => sum + player.profit, 0)), 0);
+  assert.equal(alice?.profit, 22);
+  assert.equal(bob?.profit, -22);
+  assert.equal(hand.actions.filter((action) => action.actionType === "bet" || action.actionType === "call").length, 3);
+});
+
+test("parsePokerNowHandsFromLogs counts missed and missing blind posts", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "-- ending hand #3 --", createdAt: "177982150477625" },
+    { msg: "\"Bob\" collected 9.50 from pot", createdAt: "177982150477624" },
+    { msg: "\"Alice\" checks", createdAt: "177982150477623" },
+    { msg: "\"Bob\" checks", createdAt: "177982150477622" },
+    { msg: "Flop:  [8♥, 6♣, Q♠]", createdAt: "177982150477621" },
+    { msg: "\"Alice\" calls 4.50", createdAt: "177982150477620" },
+    { msg: "\"Bob\" raises to 4.50", createdAt: "177982150477619" },
+    { msg: "\"Alice\" posts a big blind of 1.00", createdAt: "177982150477618" },
+    { msg: "\"Bob\" posts a missed big blind of 1.00", createdAt: "177982150477617" },
+    { msg: "\"Bob\" posts a missing small blind of 0.50", createdAt: "177982150477616" },
+    { msg: "Player stacks: #1 \"Alice\" (100.00) | #2 \"Bob\" (100.00)", createdAt: "177982150477615" },
+    { msg: "-- starting hand #3 (id: missing-blinds)  No Limit Hold'em (dealer: \"Bob\") --", createdAt: "177982150477614" },
+  ];
+
+  const hand = parsePokerNowHandsFromLogs("table-1", entries)[0];
+  const alice = hand.players.find((player) => player.playerAlias === "Alice");
+  const bob = hand.players.find((player) => player.playerAlias === "Bob");
+
+  assert.equal(round(hand.players.reduce((sum, player) => sum + player.profit, 0)), 0);
+  assert.equal(alice?.profit, -4.5);
+  assert.equal(bob?.profit, 4.5);
+});
+
+test("parsePokerNowHandsFromLogs merges a player id change inside a hand", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "-- ending hand #4 --", createdAt: "177982150477735" },
+    { msg: "\"michael @ newId\" collected 18.00 from pot", createdAt: "177982150477734" },
+    { msg: "Uncalled bet of 9.00 returned to \"michael @ newId\"", createdAt: "177982150477733" },
+    { msg: "\"ridley @ U-9YrwDlW3\" folds", createdAt: "177982150477732" },
+    { msg: "\"michael @ newId\" bets 9.00", createdAt: "177982150477731" },
+    { msg: "Flop:  [8♥, 6♣, Q♠]", createdAt: "177982150477730" },
+    { msg: "\"michael @ newId\" calls 9.00", createdAt: "177982150477729" },
+    { msg: "The player \"michael @ newId\" changed the ID from oldId to newId because authenticated login.", createdAt: "177982150477728" },
+    { msg: "\"ridley @ U-9YrwDlW3\" raises to 9.00", createdAt: "177982150477727" },
+    { msg: "\"michael @ oldId\" raises to 3.00", createdAt: "177982150477726" },
+    { msg: "\"ridley @ U-9YrwDlW3\" posts a big blind of 1.00", createdAt: "177982150477725" },
+    { msg: "\"michael @ oldId\" posts a small blind of 0.50", createdAt: "177982150477724" },
+    { msg: "Player stacks: #1 \"ridley @ U-9YrwDlW3\" (100.00) | #2 \"michael @ oldId\" (100.00)", createdAt: "177982150477723" },
+    { msg: "-- starting hand #4 (id: id-change)  Pot Limit Omaha Hi (dealer: \"michael @ oldId\") --", createdAt: "177982150477722" },
+  ];
+
+  const hand = parsePokerNowHandsFromLogs("table-1", entries)[0];
+  const michael = hand.players.find((player) => player.playerAlias === "michael @ newId");
+  const oldMichael = hand.players.find((player) => player.playerAlias === "michael @ oldId");
+
+  assert.equal(round(hand.players.reduce((sum, player) => sum + player.profit, 0)), 0);
+  assert.ok(michael);
+  assert.equal(oldMichael, undefined);
+  assert.equal(michael?.profit, 9);
+  assert.equal(hand.actions.some((action) => action.playerAlias === "michael @ oldId"), false);
+});
+
+function round(value: number) {
+  return Number(value.toFixed(2));
+}

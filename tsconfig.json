@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": [
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@pokernow/shared/*": [
+        "packages/shared/src/*"
+      ],
+      "@pokernow/shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@pokernow/stats/*": [
+        "packages/stats/src/*"
+      ],
+      "@pokernow/stats": [
+        "packages/stats/src/index.ts"
+      ],
+      "@pokernow/db/*": [
+        "packages/db/src/*"
+      ],
+      "@pokernow/db": [
+        "packages/db/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    "tests/**/*.ts"
+  ]
+}

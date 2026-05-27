@@ -1,0 +1,249 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TrackingState {
+  DETECTED
+  ACTIVE
+  RECONNECTING
+  ENDED
+  FAILED
+}
+
+enum StatsScope {
+  OVERALL
+  BY_GAME_TYPE
+  BY_HANDEDNESS
+  BY_GAME_TYPE_HANDEDNESS
+}
+
+enum HandednessBucket {
+  HEADS_UP
+  MULTIWAY
+  THREE_HANDED
+  FOUR_HANDED
+  FIVE_HANDED
+  SIX_PLUS
+}
+
+model Guild {
+  id            String          @id
+  trackedTables TrackedTable[]
+  players       PlayerProfile[]
+  aliases       PlayerAlias[]
+}
+
+model TrackedTable {
+  id              String            @id @default(cuid())
+  guildId         String
+  guild           Guild             @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  tableId         String
+  sourceUrl       String
+  state           TrackingState     @default(DETECTED)
+  detectedById    String?
+  detectedAt      DateTime          @default(now())
+  lastHeartbeatAt DateTime?
+  endedAt         DateTime?
+  sessions        TrackingSession[]
+  overrides       TrackedTablePlayerOverride[]
+
+  @@unique([guildId, tableId])
+}
+
+model TrackingSession {
+  id            String         @id @default(cuid())
+  trackedTableId String
+  trackedTable  TrackedTable   @relation(fields: [trackedTableId], references: [id], onDelete: Cascade)
+  startedAt     DateTime       @default(now())
+  endedAt       DateTime?
+  reconnectCount Int           @default(0)
+  status        TrackingState  @default(ACTIVE)
+  rawEvents     RawTableEvent[]
+  hands         Hand[]
+}
+
+model PlayerProfile {
+  id            String                @id @default(cuid())
+  guildId       String
+  guild         Guild                 @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  displayName   String
+  discordUserId String
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  aliases       PlayerAlias[]
+  handPlayers   HandPlayer[]
+  actions       HandAction[]
+  snapshots     StatsSnapshot[]
+  monthlyStats  MonthlyPlayerSnapshot[]
+  overrides     TrackedTablePlayerOverride[]
+
+  @@unique([guildId, displayName])
+  @@unique([guildId, discordUserId])
+}
+
+model PlayerAlias {
+  id                     String          @id @default(cuid())
+  guildId                String
+  guild                  Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  defaultPlayerProfileId String?
+  defaultPlayerProfile   PlayerProfile?  @relation(fields: [defaultPlayerProfileId], references: [id], onDelete: SetNull)
+  alias                  String
+  normalizedAlias        String
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  @@unique([guildId, alias])
+  @@index([guildId, normalizedAlias])
+}
+
+model TrackedTablePlayerOverride {
+  id              String         @id @default(cuid())
+  trackedTableId  String
+  trackedTable    TrackedTable   @relation(fields: [trackedTableId], references: [id], onDelete: Cascade)
+  alias           String
+  normalizedAlias String
+  playerProfileId String
+  playerProfile   PlayerProfile  @relation(fields: [playerProfileId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([trackedTableId, alias])
+  @@index([trackedTableId, normalizedAlias])
+}
+
+model RawTableEvent {
+  id                String           @id @default(cuid())
+  trackingSessionId String
+  trackingSession   TrackingSession  @relation(fields: [trackingSessionId], references: [id], onDelete: Cascade)
+  sequence          Int
+  tableId           String
+  eventType         String
+  occurredAt        DateTime
+  payload           Json
+  createdAt         DateTime         @default(now())
+
+  @@unique([trackingSessionId, sequence])
+  @@index([tableId, occurredAt])
+}
+
+model Hand {
+  id                String           @id
+  trackingSessionId String
+  trackingSession   TrackingSession  @relation(fields: [trackingSessionId], references: [id], onDelete: Cascade)
+  tableId           String
+  gameType          String?
+  handedness        Int?
+  startedAt         DateTime
+  finishedAt        DateTime
+  buttonSeat        Int?
+  smallBlindAlias   String?
+  bigBlindAlias     String?
+  smallBlindAmount  Decimal?         @db.Decimal(12, 2)
+  bigBlindAmount    Decimal?         @db.Decimal(12, 2)
+  anteAmount        Decimal?         @db.Decimal(12, 2)
+  boardCards        Json
+  winners           Json
+  potSize           Decimal          @db.Decimal(12, 2)
+  rawJson           Json
+  players           HandPlayer[]
+  actions           HandAction[]
+
+  @@index([tableId, startedAt])
+}
+
+model HandPlayer {
+  id              String          @id @default(cuid())
+  handId          String
+  hand            Hand            @relation(fields: [handId], references: [id], onDelete: Cascade)
+  playerProfileId String?
+  playerProfile   PlayerProfile?  @relation(fields: [playerProfileId], references: [id], onDelete: SetNull)
+  playerAlias     String
+  seat            Int?
+  position        String?
+  stackStart      Decimal?        @db.Decimal(12, 2)
+  stackEnd        Decimal?        @db.Decimal(12, 2)
+  vpip            Boolean         @default(false)
+  pfr             Boolean         @default(false)
+  profit          Decimal         @db.Decimal(12, 2)
+
+  @@unique([handId, playerAlias])
+}
+
+model HandAction {
+  id              String          @id @default(cuid())
+  handId          String
+  hand            Hand            @relation(fields: [handId], references: [id], onDelete: Cascade)
+  playerProfileId String?
+  playerProfile   PlayerProfile?  @relation(fields: [playerProfileId], references: [id], onDelete: SetNull)
+  playerAlias     String
+  street          String
+  actionType      String
+  amount          Decimal?        @db.Decimal(12, 2)
+  sequence        Int
+  occurredAt      DateTime
+
+  @@unique([handId, sequence])
+}
+
+model StatsSnapshot {
+  id              String          @id @default(cuid())
+  guildId         String
+  playerProfileId String
+  playerProfile   PlayerProfile   @relation(fields: [playerProfileId], references: [id], onDelete: Cascade)
+  scope           StatsScope
+  gameType        String?
+  handednessBucket HandednessBucket?
+  dimensionKey    String
+  handsPlayed     Int
+  vpip            Float
+  pfr             Float
+  threeBet        Float           @default(0)
+  fourBet         Float           @default(0)
+  cbet            Float           @default(0)
+  foldToCbet      Float           @default(0)
+  profitTotal     Decimal         @db.Decimal(12, 2)
+  profitTotalBb   Float
+  bbPerHundred    Float
+  biggestPotWon   Decimal         @db.Decimal(12, 2)
+  biggestPotWonBb Float
+  biggestPunt     Decimal         @db.Decimal(12, 2)
+  biggestPuntBb   Float
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([guildId, playerProfileId, dimensionKey])
+}
+
+model MonthlyPlayerSnapshot {
+  id              String          @id @default(cuid())
+  guildId         String
+  playerProfileId String
+  playerProfile   PlayerProfile   @relation(fields: [playerProfileId], references: [id], onDelete: Cascade)
+  year            Int
+  month           Int
+  scope           StatsScope
+  gameType        String?
+  handednessBucket HandednessBucket?
+  dimensionKey    String
+  handsPlayed     Int
+  vpip            Float
+  pfr             Float
+  threeBet        Float           @default(0)
+  fourBet         Float           @default(0)
+  cbet            Float           @default(0)
+  foldToCbet      Float           @default(0)
+  profitTotal     Decimal         @db.Decimal(12, 2)
+  profitTotalBb   Float
+  bbPerHundred    Float
+  biggestPotWon   Decimal         @db.Decimal(12, 2)
+  biggestPotWonBb Float
+  biggestPunt     Decimal         @db.Decimal(12, 2)
+  biggestPuntBb   Float
+  createdAt       DateTime        @default(now())
+
+  @@unique([guildId, playerProfileId, year, month, dimensionKey])
+}

@@ -1,0 +1,1 @@
+ALTER TYPE "HandednessBucket" ADD VALUE 'MULTIWAY';

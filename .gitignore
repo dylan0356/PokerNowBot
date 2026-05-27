@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.local
+coverage
+.DS_Store
+npm-debug.log*
+packages/db/generated
+data
