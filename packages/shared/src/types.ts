@@ -52,6 +52,8 @@ export interface ReconstructedHand {
   bigBlindAmount?: number;
   anteAmount?: number;
   boardCards: string[];
+  boardRunouts?: string[][];
+  isBombPot?: boolean;
   potSize: number;
   winners: string[];
   players: ReconstructedHandPlayer[];

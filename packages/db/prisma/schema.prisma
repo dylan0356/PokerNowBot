@@ -149,6 +149,7 @@ model Hand {
   boardCards        Json
   winners           Json
   potSize           Decimal          @db.Decimal(12, 2)
+  isBombPot         Boolean          @default(false)
   rawJson           Json
   players           HandPlayer[]
   actions           HandAction[]

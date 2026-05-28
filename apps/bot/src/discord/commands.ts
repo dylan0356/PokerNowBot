@@ -15,6 +15,7 @@ import type { HandednessBucket } from "@pokernow/shared";
 
 const ADMIN_USER_IDS = new Set(["251557870603075586"]);
 const embedColor = 0x1f8b4c;
+const bombPotStatsNote = "Bomb pots included in profit and hands, excluded from rate stats.";
 const exactHandednessBuckets: HandednessBucket[] = ["THREE_HANDED", "FOUR_HANDED", "FIVE_HANDED", "SIX_PLUS"];
 const handednessChoices: Array<{ name: string; value: HandednessBucket }> = [
   { name: "Heads Up", value: "HEADS_UP" },
@@ -57,6 +58,11 @@ const commands = [
   new SlashCommandBuilder().setName("graph").setDescription("Show cumulative profit graph").addUserOption((option) =>
     option.setName("user").setDescription("Discord user").setRequired(false),
   ),
+  new SlashCommandBuilder()
+    .setName("head-to-head")
+    .setDescription("Compare two players in hands they played together")
+    .addUserOption((option) => option.setName("user").setDescription("First Discord user").setRequired(true))
+    .addUserOption((option) => option.setName("opponent").setDescription("Second Discord user").setRequired(true)),
   new SlashCommandBuilder()
     .setName("players")
     .setDescription("Show players currently observed on tracked PokerNow tables")
@@ -237,6 +243,28 @@ async function routeCommand(interaction: ChatInputCommandInteraction, commandSer
         }
 
         await interaction.reply(graphUrl.length <= 2000 ? graphUrl : "Graph data is too large to render as a Discord link");
+        return;
+      }
+      case "head-to-head": {
+        const firstUser = interaction.options.getUser("user", true);
+        const secondUser = interaction.options.getUser("opponent", true);
+        if (firstUser.id === secondUser.id) {
+          await interaction.reply("Choose two different players");
+          return;
+        }
+
+        const headToHead = await commandService.getHeadToHead(guildId, firstUser.id, secondUser.id);
+        if (!headToHead) {
+          await interaction.reply("Both Discord users need player records before head-to-head stats can be shown");
+          return;
+        }
+
+        if (headToHead.sharedHands === 0) {
+          await interaction.reply(`No shared hands found for ${headToHead.players[0].displayName} and ${headToHead.players[1].displayName}`);
+          return;
+        }
+
+        await interaction.reply({ embeds: [buildHeadToHeadEmbed(headToHead)] });
         return;
       }
       case "players": {
@@ -501,7 +529,52 @@ function buildSessionStatsEmbed(sessionStats: NonNullable<Awaited<ReturnType<Com
   }
 
   if (sessionStats.players.length > 25) {
-    embed.setFooter({ text: `Showing 25 of ${sessionStats.players.length} players` });
+    embed.setFooter({ text: `Showing 25 of ${sessionStats.players.length} players. ${bombPotStatsNote}` });
+  } else {
+    embed.setFooter({ text: bombPotStatsNote });
+  }
+
+  return embed;
+}
+
+function buildHeadToHeadEmbed(headToHead: NonNullable<Awaited<ReturnType<CommandService["getHeadToHead"]>>>) {
+  const [first, second] = headToHead.players;
+  const netLeader = first.profitTotal === second.profitTotal ? null : first.profitTotal > second.profitTotal ? first : second;
+  const embed = new EmbedBuilder()
+    .setColor(embedColor)
+    .setTitle(`${first.displayName} vs ${second.displayName}`)
+    .setFooter({ text: bombPotStatsNote })
+    .setDescription(
+      [
+        `${headToHead.sharedHands} shared hands`,
+        `${headToHead.sharedSessions} shared session${headToHead.sharedSessions === 1 ? "" : "s"}`,
+        netLeader ? `Leader: ${netLeader.displayName} (${money(netLeader.profitTotal)})` : "Net: even",
+      ].join("\n"),
+    );
+
+  for (const player of headToHead.players) {
+    embed.addFields({
+      name: `${player.displayName}${player.discordUserId ? ` (<@${player.discordUserId}>)` : ""}`,
+      value: [
+        `Profit: ${money(player.profitTotal)} | bb: ${bb(player.profitTotalBb)}`,
+        `VPIP: ${percent(player.stats.vpip)} | PFR: ${percent(player.stats.pfr)}`,
+        `3B: ${percent(player.stats.threeBet)} | 4B: ${percent(player.stats.fourBet)}`,
+        `CB: ${percent(player.stats.cbet)} | FvCB: ${percent(player.stats.foldToCbet)}`,
+        `Best: ${money(player.biggestWin)} | Worst: ${money(player.biggestLoss)}`,
+      ].join("\n"),
+      inline: true,
+    });
+  }
+
+  if (headToHead.biggestPot) {
+    embed.addFields({
+      name: "Biggest Shared Pot",
+      value: [
+        `${money(headToHead.biggestPot.potSize)} | ${headToHead.biggestPot.tableId}`,
+        `Board: ${headToHead.biggestPot.boardCards.length > 0 ? headToHead.biggestPot.boardCards.join(" ") : "none"}`,
+        `Winners: ${headToHead.biggestPot.winners.join(", ") || "unknown"}`,
+      ].join("\n"),
+    });
   }
 
   return embed;
@@ -526,6 +599,7 @@ async function buildStatsEmbed(
     .setColor(embedColor)
     .setTitle(gameType)
     .setAuthor({ name: stats.displayName })
+    .setFooter({ text: bombPotStatsNote })
     .setDescription(`Aliases: ${aliases}`);
 
   const mainBuckets: HandednessBucket[] = filter.handedness ? [filter.handedness] : ["HEADS_UP", "MULTIWAY"];
@@ -548,6 +622,7 @@ function buildStatsFallbackEmbed(stats: NonNullable<Awaited<ReturnType<CommandSe
     .setColor(embedColor)
     .setTitle(statsFilterLabel(filter) || "Stats")
     .setAuthor({ name: stats.displayName })
+    .setFooter({ text: bombPotStatsNote })
     .setDescription(`Aliases: ${stats.aliases.map((alias) => alias.alias).join(", ") || "none"}`);
 
   for (const snapshot of stats.snapshots) {
@@ -593,7 +668,7 @@ async function formatLeaderboardPage(commandService: CommandService, guildId: st
       ];
 
   const title = pageCount > 1 && filter.gameType ? `${filter.gameType} (${pageIndex + 1}/${pageCount})` : filter.gameType || "Leaderboard";
-  const embed = new EmbedBuilder().setColor(embedColor).setTitle(title);
+  const embed = new EmbedBuilder().setColor(embedColor).setTitle(title).setFooter({ text: bombPotStatsNote });
 
   sections.forEach((section, sectionIndex) => {
     if (sectionIndex > 0) {
@@ -643,4 +718,14 @@ async function replyWithReactionPages(interaction: ChatInputCommandInteraction, 
 
 function percent(value: number) {
   return `${Math.round(value * 1000) / 10}%`;
+}
+
+function money(value: number) {
+  const rounded = Math.round(value * 100) / 100;
+  return rounded >= 0 ? `+${rounded.toFixed(2)}` : rounded.toFixed(2);
+}
+
+function bb(value: number) {
+  const rounded = Math.round(value * 100) / 100;
+  return rounded >= 0 ? `+${rounded.toFixed(2)}` : rounded.toFixed(2);
 }

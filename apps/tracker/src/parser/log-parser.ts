@@ -20,6 +20,8 @@ interface MutableHand {
   bigBlindAmount?: number;
   anteAmount?: number;
   boardCards: string[];
+  boardRunouts: string[][];
+  isBombPot: boolean;
   winners: string[];
   players: Map<string, MutablePlayer>;
   actions: ReconstructedAction[];
@@ -36,7 +38,7 @@ export function parsePokerNowHandsFromLogs(tableId: string, entries: PokerNowLog
   let current: MutableHand | null = null;
 
   for (const entry of chronological) {
-    const startMatch = entry.msg.match(/^-- starting hand #(\d+) \(id: ([^)]+)\)\s+(.+?)\s+\(dealer: "(.+)"\) --$/);
+    const startMatch = entry.msg.match(/^-- starting hand #(\d+) \(id: ([^)]+)\)\s+(.+?)\s+\(dealer: (?:"([^"]+)"|(.+))\) --$/);
     if (startMatch) {
       current = {
         handId: startMatch[2],
@@ -44,8 +46,10 @@ export function parsePokerNowHandsFromLogs(tableId: string, entries: PokerNowLog
         tableId,
         gameType: startMatch[3],
         startedAt: normalizeCreatedAt(entry.createdAt),
-        dealerAlias: startMatch[4],
+        dealerAlias: firstDefined(startMatch[4], startMatch[5]),
         boardCards: [],
+        boardRunouts: [],
+        isBombPot: false,
         winners: [],
         players: new Map(),
         actions: [],
@@ -63,36 +67,28 @@ export function parsePokerNowHandsFromLogs(tableId: string, entries: PokerNowLog
     }
 
     current.sourceEntries.push(entry);
+    if (entry.msg.includes("(bomb pot bet)")) {
+      current.isBombPot = true;
+    }
 
     if (entry.msg.startsWith("Player stacks: ")) {
       parsePlayerStacks(current, entry.msg);
       continue;
     }
 
-    if (entry.msg.startsWith("Flop:")) {
-      current.street = "flop";
+    const boardLine = parseBoardLine(entry.msg);
+    if (boardLine) {
+      current.street = boardLine.street;
       current.streetCommitted = new Map();
-      current.boardCards = parseBoardCards(entry.msg);
-      continue;
-    }
-
-    if (entry.msg.startsWith("Turn:")) {
-      current.street = "turn";
-      current.streetCommitted = new Map();
-      current.boardCards = parseBoardCards(entry.msg);
-      continue;
-    }
-
-    if (entry.msg.startsWith("River:")) {
-      current.street = "river";
-      current.streetCommitted = new Map();
-      current.boardCards = parseBoardCards(entry.msg);
+      current.boardRunouts[boardLine.runoutIndex] = boardLine.cards;
+      current.boardCards = current.boardRunouts[0] ?? boardLine.cards;
       continue;
     }
 
     if (
       parseAliasChange(current, entry) ||
       parseBlind(current, entry) ||
+      parseBombPotBet(current, entry) ||
       parseAction(current, entry) ||
       parseUncalledBet(current, entry) ||
       parseWinner(current, entry) ||
@@ -123,15 +119,15 @@ function parsePlayerStacks(hand: MutableHand, message: string) {
   const body = message.replace(/^Player stacks:\s*/, "");
   let handedness = 0;
   for (const segment of body.split(" | ")) {
-    const match = segment.match(/^#(\d+) "(.+)" \(([\d.]+)\)$/);
+    const match = segment.match(/^#(\d+) (?:"([^"]+)"|(.+?)) \(([\d.]+)\)$/);
     if (!match) {
       continue;
     }
     handedness += 1;
 
     const seat = Number(match[1]);
-    const alias = match[2];
-    const stackStart = Number(match[3]);
+    const alias = firstDefined(match[2], match[3]);
+    const stackStart = Number(match[4]);
     const existing = hand.players.get(alias);
 
     hand.players.set(alias, {
@@ -157,15 +153,15 @@ function parsePlayerStacks(hand: MutableHand, message: string) {
 }
 
 function parseBlind(hand: MutableHand, entry: PokerNowLogEntry) {
-  const match = entry.msg.trim().match(/^"(.+)" posts a (?:(missing|missed) )?(small|big) blind of ([\d.]+)(?: and go all in)?$/);
+  const match = entry.msg.trim().match(/^(?:"([^"]+)"|(.+?)) posts a (?:(missing|missed) )?(small|big) blind of ([\d.]+)(?: and go all in)?\s*$/);
   if (!match) {
     return false;
   }
 
-  const alias = match[1];
-  const blindModifier = match[2];
-  const blindType = match[3];
-  const amount = Number(match[4]);
+  const alias = firstDefined(match[1], match[2]);
+  const blindModifier = match[3];
+  const blindType = match[4];
+  const amount = Number(match[5]);
   const player = hand.players.get(alias) ?? seedPlayer(alias);
   player.contribution += amount;
   hand.players.set(alias, player);
@@ -250,26 +246,26 @@ function parseAliasChange(hand: MutableHand, entry: PokerNowLogEntry) {
 }
 
 function parseAction(hand: MutableHand, entry: PokerNowLogEntry) {
-  const passiveMatch = entry.msg.match(/^"(.+)" (checks|folds)$/);
+  const passiveMatch = entry.msg.match(/^(?:"([^"]+)"|(.+?)) (checks|folds)$/);
   if (passiveMatch) {
     hand.actions.push({
       sequence: hand.actions.length + 1,
       street: hand.street,
-      playerAlias: passiveMatch[1],
-      actionType: passiveMatch[2] === "folds" ? "fold" : "check",
+      playerAlias: firstDefined(passiveMatch[1], passiveMatch[2]),
+      actionType: passiveMatch[3] === "folds" ? "fold" : "check",
       occurredAt: normalizeCreatedAt(entry.createdAt),
     });
     return true;
   }
 
-  const amountMatch = entry.msg.match(/^"(.+)" (calls|bets|raises to) ([\d.]+)(?: and go all in)?$/);
+  const amountMatch = entry.msg.match(/^(?:"([^"]+)"|(.+?)) (calls|bets|raises to) ([\d.]+)(?: and go all in)?$/);
   if (!amountMatch) {
     return false;
   }
 
-  const alias = amountMatch[1];
-  const verb = amountMatch[2];
-  const amount = Number(amountMatch[3]);
+  const alias = firstDefined(amountMatch[1], amountMatch[2]);
+  const verb = amountMatch[3];
+  const amount = Number(amountMatch[4]);
   const player = hand.players.get(alias) ?? seedPlayer(alias);
   const currentStreetAmount = hand.streetCommitted.get(alias) ?? 0;
   const committed = Math.max(amount - currentStreetAmount, 0);
@@ -295,14 +291,43 @@ function parseAction(hand: MutableHand, entry: PokerNowLogEntry) {
   return true;
 }
 
-function parseWinner(hand: MutableHand, entry: PokerNowLogEntry) {
-  const match = entry.msg.match(/^"(.+)" collected ([\d.]+) from pot/);
+function parseBombPotBet(hand: MutableHand, entry: PokerNowLogEntry) {
+  const match = entry.msg.match(/^(?:"([^"]+)"|(.+?)) (posts a bet of|calls) ([\d.]+) \(bomb pot bet\)$/);
   if (!match) {
     return false;
   }
 
-  const alias = match[1];
-  const collected = Number(match[2]);
+  hand.isBombPot = true;
+  const alias = firstDefined(match[1], match[2]);
+  const verb = match[3];
+  const amount = Number(match[4]);
+  const player = hand.players.get(alias) ?? seedPlayer(alias);
+  const currentStreetAmount = hand.streetCommitted.get(alias) ?? 0;
+  const committed = Math.max(amount - currentStreetAmount, 0);
+
+  player.contribution += committed;
+  hand.players.set(alias, player);
+  hand.streetCommitted.set(alias, amount);
+  hand.actions.push({
+    sequence: hand.actions.length + 1,
+    street: hand.street,
+    playerAlias: alias,
+    actionType: verb === "calls" ? "call" : "bet",
+    amount: committed,
+    occurredAt: normalizeCreatedAt(entry.createdAt),
+  });
+
+  return true;
+}
+
+function parseWinner(hand: MutableHand, entry: PokerNowLogEntry) {
+  const match = entry.msg.match(/^(?:"([^"]+)"|(.+?)) collected ([\d.]+) from pot/);
+  if (!match) {
+    return false;
+  }
+
+  const alias = firstDefined(match[1], match[2]);
+  const collected = Number(match[3]);
   const player = hand.players.get(alias) ?? seedPlayer(alias);
   player.profit += collected;
   hand.collectedFromPot += collected;
@@ -315,13 +340,13 @@ function parseWinner(hand: MutableHand, entry: PokerNowLogEntry) {
 }
 
 function parseUncalledBet(hand: MutableHand, entry: PokerNowLogEntry) {
-  const match = entry.msg.match(/^Uncalled bet of ([\d.]+) returned to "(.+)"$/);
+  const match = entry.msg.match(/^Uncalled bet of ([\d.]+) returned to (?:"([^"]+)"|(.+))$/);
   if (!match) {
     return false;
   }
 
   const amount = Number(match[1]);
-  const alias = match[2];
+  const alias = firstDefined(match[2], match[3]);
   const player = hand.players.get(alias) ?? seedPlayer(alias);
   player.contribution = Math.max(0, Number((player.contribution - amount).toFixed(2)));
   hand.players.set(alias, player);
@@ -332,7 +357,7 @@ function parseUncalledBet(hand: MutableHand, entry: PokerNowLogEntry) {
 }
 
 function parseShow(hand: MutableHand, entry: PokerNowLogEntry) {
-  const match = entry.msg.match(/^"(.+)" shows a (.+)\.$/);
+  const match = entry.msg.match(/^(?:"([^"]+)"|(.+?)) shows a (.+)\.$/);
   if (!match) {
     return false;
   }
@@ -340,7 +365,7 @@ function parseShow(hand: MutableHand, entry: PokerNowLogEntry) {
   hand.actions.push({
     sequence: hand.actions.length + 1,
     street: "showdown",
-    playerAlias: match[1],
+    playerAlias: firstDefined(match[1], match[2]),
     actionType: "check",
     occurredAt: normalizeCreatedAt(entry.createdAt),
   });
@@ -408,6 +433,8 @@ function toReconstructedHand(hand: MutableHand): ReconstructedHand {
     bigBlindAmount: hand.bigBlindAmount,
     anteAmount: hand.anteAmount,
     boardCards: hand.boardCards,
+    boardRunouts: hand.boardRunouts.length > 0 ? hand.boardRunouts : undefined,
+    isBombPot: hand.isBombPot,
     winners: hand.winners,
     potSize: Number(hand.collectedFromPot.toFixed(2)),
     players: [...hand.players.values()].map((player) => ({
@@ -438,6 +465,29 @@ function seedPlayer(alias: string): MutablePlayer {
 
 function parseBoardCards(message: string) {
   return [...message.matchAll(/[2-9TJQKA10]+[♠♥♦♣]/g)].map((match) => match[0].replace("10", "T"));
+}
+
+function parseBoardLine(message: string): { street: Street; runoutIndex: number; cards: string[] } | null {
+  const match = message.match(/^(Flop|Turn|River)(?: \((second board|second run)\))?:/);
+  if (!match) {
+    return null;
+  }
+
+  const street = match[1].toLowerCase() as Street;
+  const runoutIndex = match[2] ? 1 : 0;
+  return {
+    street,
+    runoutIndex,
+    cards: parseBoardCards(message),
+  };
+}
+
+function firstDefined(...values: Array<string | undefined>) {
+  const value = values.find((entry) => entry !== undefined);
+  if (value === undefined) {
+    throw new Error("Expected a captured value");
+  }
+  return value;
 }
 
 function normalizeCreatedAt(createdAt: string) {

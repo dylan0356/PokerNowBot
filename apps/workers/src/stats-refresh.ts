@@ -41,6 +41,7 @@ export async function refreshStatsForGuild(guildId: string) {
                 pfr: player.pfr,
                 profit: Number(player.profit),
                 bigBlindAmount: hand.bigBlindAmount ? Number(hand.bigBlindAmount) : undefined,
+                isBombPot: hand.isBombPot,
                 playerProfileId: profile.id,
                 playerAlias: player.playerAlias,
                 actions: hand.actions,
@@ -95,6 +96,7 @@ interface ProfileHandEntry {
   pfr: boolean;
   profit: number;
   bigBlindAmount?: number;
+  isBombPot: boolean;
   playerProfileId: string;
   playerAlias: string;
   actions: Array<{
@@ -108,10 +110,11 @@ interface ProfileHandEntry {
 
 function calculateProfileStats(entries: ProfileHandEntry[]) {
   const handsPlayed = entries.length;
-  const vpipCount = entries.filter((entry) => entry.vpip).length;
-  const pfrCount = entries.filter((entry) => entry.pfr).length;
+  const rateEntries = entries.filter((entry) => !entry.isBombPot);
+  const vpipCount = rateEntries.filter((entry) => entry.vpip).length;
+  const pfrCount = rateEntries.filter((entry) => entry.pfr).length;
   const actionStats = calculateActionStats(
-    entries.map((entry) => ({
+    rateEntries.map((entry) => ({
       actions: entry.actions,
       actor: {
         playerProfileId: entry.playerProfileId,
@@ -128,8 +131,8 @@ function calculateProfileStats(entries: ProfileHandEntry[]) {
 
   return {
     handsPlayed,
-    vpip: handsPlayed === 0 ? 0 : vpipCount / handsPlayed,
-    pfr: handsPlayed === 0 ? 0 : pfrCount / handsPlayed,
+    vpip: rateEntries.length === 0 ? 0 : vpipCount / rateEntries.length,
+    pfr: rateEntries.length === 0 ? 0 : pfrCount / rateEntries.length,
     threeBet: rate(actionStats.threeBets, actionStats.threeBetOpportunities),
     fourBet: rate(actionStats.fourBets, actionStats.fourBetOpportunities),
     cbet: rate(actionStats.cbets, actionStats.cbetOpportunities),

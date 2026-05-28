@@ -73,6 +73,7 @@ export async function persistHand(trackingSessionId: string, hand: Reconstructed
         boardCards: hand.boardCards,
         winners: hand.winners,
         potSize: hand.potSize,
+        isBombPot: hand.isBombPot ?? false,
         rawJson: hand as unknown as Prisma.InputJsonValue,
       },
       create: {
@@ -92,6 +93,7 @@ export async function persistHand(trackingSessionId: string, hand: Reconstructed
         boardCards: hand.boardCards,
         winners: hand.winners,
         potSize: hand.potSize,
+        isBombPot: hand.isBombPot ?? false,
         rawJson: hand as unknown as Prisma.InputJsonValue,
       },
     }),

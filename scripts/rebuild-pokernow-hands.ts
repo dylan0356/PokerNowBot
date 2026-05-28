@@ -171,6 +171,10 @@ function handChanged(existing: (typeof sessions)[number]["hands"][number], parse
     return true;
   }
 
+  if (existing.isBombPot !== (parsed.isBombPot ?? false)) {
+    return true;
+  }
+
   for (const player of parsed.players) {
     const existingPlayer = existing.players.find((entry) => entry.playerAlias === player.playerAlias);
     if (!existingPlayer || Number(existingPlayer.profit) !== player.profit || existingPlayer.vpip !== player.vpip || existingPlayer.pfr !== player.pfr) {

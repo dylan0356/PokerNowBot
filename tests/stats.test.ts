@@ -135,6 +135,61 @@ test("calculatePlayerStats computes preflop and flop action rates", () => {
   assert.equal(stats.foldToCbet, 1);
 });
 
+test("calculatePlayerStats includes bomb-pot profit and hands but excludes rate stats", () => {
+  const now = new Date().toISOString();
+  const hands: ReconstructedHand[] = [
+    {
+      handId: "normal-fold",
+      tableId: "table",
+      startedAt: now,
+      finishedAt: now,
+      bigBlindAmount: 1,
+      boardCards: [],
+      potSize: 3,
+      winners: ["Other"],
+      rawEvents: [],
+      players: [{ playerAlias: "Dylan", vpip: false, pfr: false, profit: -1 }],
+      actions: [
+        { sequence: 1, street: "preflop", playerAlias: "Other", actionType: "raise", amount: 3, occurredAt: now },
+        { sequence: 2, street: "preflop", playerAlias: "Dylan", actionType: "fold", occurredAt: now },
+      ],
+    },
+    {
+      handId: "bomb-pot",
+      tableId: "table",
+      startedAt: now,
+      finishedAt: now,
+      bigBlindAmount: 1,
+      boardCards: [],
+      isBombPot: true,
+      potSize: 20,
+      winners: ["Dylan"],
+      rawEvents: [],
+      players: [{ playerAlias: "Dylan", vpip: true, pfr: true, profit: 10 }],
+      actions: [
+        { sequence: 1, street: "preflop", playerAlias: "Dylan", actionType: "bet", amount: 3, occurredAt: now },
+        { sequence: 2, street: "flop", playerAlias: "Dylan", actionType: "bet", amount: 5, occurredAt: now },
+      ],
+    },
+  ];
+
+  const stats = calculatePlayerStats({
+    playerAlias: "Dylan",
+    hands,
+    defaultBigBlind: 1,
+  });
+
+  assert.equal(stats.handsPlayed, 2);
+  assert.equal(stats.profitTotal, 9);
+  assert.equal(stats.profitTotalBb, 9);
+  assert.equal(stats.biggestPotWon, 10);
+  assert.equal(stats.biggestPunt, -1);
+  assert.equal(stats.vpip, 0);
+  assert.equal(stats.pfr, 0);
+  assert.equal(stats.threeBet, 0);
+  assert.equal(stats.cbet, 0);
+});
+
 test("deriveStatsDimensions includes game type and handedness splits", () => {
   const hands: ReconstructedHand[] = [
     {

@@ -197,6 +197,7 @@ async function replaceHands(trackingSessionId: string, handsToImport: Reconstruc
         boardCards: hand.boardCards,
         winners: hand.winners,
         potSize: hand.potSize,
+        isBombPot: hand.isBombPot ?? false,
         rawJson: hand as unknown as Prisma.InputJsonValue,
       })),
     }),

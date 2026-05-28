@@ -17,10 +17,11 @@ export function calculatePlayerStats(input: StatsAccumulatorInput): PlayerStats 
     .filter((entry): entry is { hand: ReconstructedHand; player: NonNullable<(typeof entry)["player"]> } => Boolean(entry.player));
 
   const handsPlayed = relevantHands.length;
-  const vpipCount = relevantHands.filter((entry) => entry.player.vpip).length;
-  const pfrCount = relevantHands.filter((entry) => entry.player.pfr).length;
+  const rateHands = relevantHands.filter((entry) => !entry.hand.isBombPot);
+  const vpipCount = rateHands.filter((entry) => entry.player.vpip).length;
+  const pfrCount = rateHands.filter((entry) => entry.player.pfr).length;
   const actionStats = calculateActionStats(
-    relevantHands.map((entry) => ({
+    rateHands.map((entry) => ({
       actions: entry.hand.actions,
       actor: { playerAlias: entry.player.playerAlias },
     })),
@@ -40,8 +41,8 @@ export function calculatePlayerStats(input: StatsAccumulatorInput): PlayerStats 
 
   return {
     handsPlayed,
-    vpip: handsPlayed === 0 ? 0 : vpipCount / handsPlayed,
-    pfr: handsPlayed === 0 ? 0 : pfrCount / handsPlayed,
+    vpip: rateHands.length === 0 ? 0 : vpipCount / rateHands.length,
+    pfr: rateHands.length === 0 ? 0 : pfrCount / rateHands.length,
     threeBet: rate(actionStats.threeBets, actionStats.threeBetOpportunities),
     fourBet: rate(actionStats.fourBets, actionStats.fourBetOpportunities),
     cbet: rate(actionStats.cbets, actionStats.cbetOpportunities),

@@ -603,6 +603,7 @@ export class CommandService {
           pfr: player.pfr,
           profit: Number(player.profit),
           bigBlindAmount: hand.bigBlindAmount ? Number(hand.bigBlindAmount) : undefined,
+          isBombPot: hand.isBombPot,
           playerProfileId: player.playerProfileId,
           playerAlias: player.playerAlias,
           actions: hand.actions,
@@ -672,6 +673,100 @@ export class CommandService {
     }
 
     return buildProfitGraphUrl(labels, series);
+  }
+
+  async getHeadToHead(guildId: string, firstDiscordUserId: string, secondDiscordUserId: string) {
+    const [firstProfile, secondProfile] = await Promise.all([
+      this.findProfileByDiscord(guildId, firstDiscordUserId),
+      this.findProfileByDiscord(guildId, secondDiscordUserId),
+    ]);
+    if (!firstProfile || !secondProfile) {
+      return null;
+    }
+
+    const sharedHands = await prisma.hand.findMany({
+      where: {
+        trackingSession: {
+          trackedTable: {
+            guildId,
+          },
+        },
+        AND: [
+          {
+            players: {
+              some: {
+                playerProfileId: firstProfile.id,
+              },
+            },
+          },
+          {
+            players: {
+              some: {
+                playerProfileId: secondProfile.id,
+              },
+            },
+          },
+        ],
+      },
+      include: {
+        trackingSession: {
+          select: {
+            id: true,
+          },
+        },
+        players: true,
+        actions: true,
+      },
+      orderBy: {
+        finishedAt: "asc",
+      },
+    });
+
+    const firstEntries: HeadToHeadHandEntry[] = [];
+    const secondEntries: HeadToHeadHandEntry[] = [];
+    const sharedSessionIds = new Set<string>();
+    let biggestPot:
+      | {
+          handId: string;
+          tableId: string;
+          potSize: number;
+          boardCards: string[];
+          winners: string[];
+        }
+      | null = null;
+
+    for (const hand of sharedHands) {
+      const firstPlayer = hand.players.find((player) => player.playerProfileId === firstProfile.id);
+      const secondPlayer = hand.players.find((player) => player.playerProfileId === secondProfile.id);
+      if (!firstPlayer || !secondPlayer) {
+        continue;
+      }
+
+      sharedSessionIds.add(hand.trackingSession.id);
+      const potSize = Number(hand.potSize);
+      if (!biggestPot || potSize > biggestPot.potSize) {
+        biggestPot = {
+          handId: hand.id,
+          tableId: hand.tableId,
+          potSize,
+          boardCards: Array.isArray(hand.boardCards) ? hand.boardCards.map(String) : [],
+          winners: Array.isArray(hand.winners) ? hand.winners.map(String) : [],
+        };
+      }
+
+      firstEntries.push(toHeadToHeadEntry(firstPlayer, hand));
+      secondEntries.push(toHeadToHeadEntry(secondPlayer, hand));
+    }
+
+    return {
+      sharedHands: firstEntries.length,
+      sharedSessions: sharedSessionIds.size,
+      biggestPot,
+      players: [
+        summarizeHeadToHeadPlayer(firstProfile, firstEntries),
+        summarizeHeadToHeadPlayer(secondProfile, secondEntries),
+      ],
+    };
   }
 
   async getTrackingStatus(guildId: string) {
@@ -1188,6 +1283,7 @@ interface SessionHandEntry {
   pfr: boolean;
   profit: number;
   bigBlindAmount?: number;
+  isBombPot: boolean;
   playerProfileId: string | null;
   playerAlias: string;
   actions: Array<{
@@ -1199,12 +1295,17 @@ interface SessionHandEntry {
   }>;
 }
 
+interface HeadToHeadHandEntry extends SessionHandEntry {
+  profitTotalBb: number;
+}
+
 function calculateSessionStats(entries: SessionHandEntry[]) {
   const handsPlayed = entries.length;
-  const vpipCount = entries.filter((entry) => entry.vpip).length;
-  const pfrCount = entries.filter((entry) => entry.pfr).length;
+  const rateEntries = entries.filter((entry) => !entry.isBombPot);
+  const vpipCount = rateEntries.filter((entry) => entry.vpip).length;
+  const pfrCount = rateEntries.filter((entry) => entry.pfr).length;
   const actionStats = calculateActionStats(
-    entries.map((entry) => ({
+    rateEntries.map((entry) => ({
       actions: entry.actions,
       actor: {
         playerProfileId: entry.playerProfileId,
@@ -1215,8 +1316,8 @@ function calculateSessionStats(entries: SessionHandEntry[]) {
 
   return {
     handsPlayed,
-    vpip: handsPlayed === 0 ? 0 : vpipCount / handsPlayed,
-    pfr: handsPlayed === 0 ? 0 : pfrCount / handsPlayed,
+    vpip: rateEntries.length === 0 ? 0 : vpipCount / rateEntries.length,
+    pfr: rateEntries.length === 0 ? 0 : pfrCount / rateEntries.length,
     threeBet: rate(actionStats.threeBets, actionStats.threeBetOpportunities),
     fourBet: rate(actionStats.fourBets, actionStats.fourBetOpportunities),
     cbet: rate(actionStats.cbets, actionStats.cbetOpportunities),
@@ -1226,4 +1327,56 @@ function calculateSessionStats(entries: SessionHandEntry[]) {
 
 function rate(count: number, opportunities: number) {
   return opportunities === 0 ? 0 : count / opportunities;
+}
+
+function toHeadToHeadEntry(
+  player: {
+    playerProfileId: string | null;
+    playerAlias: string;
+    vpip: boolean;
+    pfr: boolean;
+    profit: unknown;
+  },
+  hand: {
+    bigBlindAmount: unknown;
+    isBombPot: boolean;
+    actions: Array<{
+      playerProfileId: string | null;
+      playerAlias: string;
+      street: string;
+      actionType: string;
+      sequence: number;
+    }>;
+  },
+): HeadToHeadHandEntry {
+  const profit = Number(player.profit);
+  const bigBlindAmount = hand.bigBlindAmount ? Number(hand.bigBlindAmount) : undefined;
+  return {
+    vpip: player.vpip,
+    pfr: player.pfr,
+    profit,
+    profitTotalBb: bigBlindAmount && bigBlindAmount > 0 ? profit / bigBlindAmount : profit,
+    bigBlindAmount,
+    isBombPot: hand.isBombPot,
+    playerProfileId: player.playerProfileId,
+    playerAlias: player.playerAlias,
+    actions: hand.actions,
+  };
+}
+
+function summarizeHeadToHeadPlayer(
+  profile: { displayName: string; discordUserId: string },
+  entries: HeadToHeadHandEntry[],
+) {
+  const profitTotal = entries.reduce((sum, entry) => sum + entry.profit, 0);
+  const profitTotalBb = entries.reduce((sum, entry) => sum + entry.profitTotalBb, 0);
+  return {
+    displayName: profile.displayName,
+    discordUserId: profile.discordUserId,
+    profitTotal: Number(profitTotal.toFixed(2)),
+    profitTotalBb: Number(profitTotalBb.toFixed(2)),
+    biggestWin: Math.max(0, ...entries.map((entry) => entry.profit)),
+    biggestLoss: Math.min(0, ...entries.map((entry) => entry.profit)),
+    stats: calculateSessionStats(entries),
+  };
 }

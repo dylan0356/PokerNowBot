@@ -239,6 +239,111 @@ test("parsePokerNowHandsFromLogs merges a player id change inside a hand", () =>
   assert.equal(hand.actions.some((action) => action.playerAlias === "michael @ oldId"), false);
 });
 
+test("parsePokerNowHandsFromLogs tracks five-card double-board bomb pots without VPIP/PFR", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "-- ending hand #328 --", createdAt: "177982160000024" },
+    { msg: "Bacon collected 9.00 from pot with Straight, A High on the second board  (combination: 10♦, J♣, Q♣, K♦, A♣)", createdAt: "177982160000023" },
+    { msg: "Bacon collected 9.00 from pot with Two Pair, Q's & J's (combination: 6♦, J♦, J♣, Q♠, Q♦)", createdAt: "177982160000022" },
+    { msg: "Bacon shows a 4♣, J♦, J♣, 9♠, K♦.", createdAt: "177982160000021" },
+    { msg: "Dylan shows a 4♠, 6♠, 3♦, 10♥, 10♠.", createdAt: "177982160000020" },
+    { msg: "Bacon checks", createdAt: "177982160000019" },
+    { msg: "Dylan checks", createdAt: "177982160000018" },
+    { msg: "River (second board): 10♦, J♠, 5♦, Q♣ [A♣]", createdAt: "177982160000017" },
+    { msg: "River: 6♦, 3♠, Q♠, Q♦ [2♣]", createdAt: "177982160000016" },
+    { msg: "Bacon checks", createdAt: "177982160000015" },
+    { msg: "Dylan checks", createdAt: "177982160000014" },
+    { msg: "Turn (second board): 10♦, J♠, 5♦ [Q♣]", createdAt: "177982160000013" },
+    { msg: "Turn: 6♦, 3♠, Q♠ [Q♦]", createdAt: "177982160000012" },
+    { msg: "Ridley folds", createdAt: "177982160000011" },
+    { msg: "Dylan calls 4.50", createdAt: "177982160000010" },
+    { msg: "Bacon bets 4.50", createdAt: "177982160000009" },
+    { msg: "Ridley checks", createdAt: "177982160000008" },
+    { msg: "Dylan checks", createdAt: "177982160000007" },
+    { msg: "Flop (second board):  [10♦, J♠, 5♦]", createdAt: "177982160000006" },
+    { msg: "Flop:  [6♦, 3♠, Q♠]", createdAt: "177982160000005" },
+    { msg: "Ridley calls 3.00 (bomb pot bet)", createdAt: "177982160000004" },
+    { msg: "Dylan calls 3.00 (bomb pot bet)", createdAt: "177982160000003" },
+    { msg: "Bacon posts a bet of 3.00 (bomb pot bet)", createdAt: "177982160000002" },
+    { msg: "Player stacks: #1 Ridley (327.91) | #2 Bacon (355.54) | #10 Dylan (240.68)", createdAt: "177982160000001" },
+    { msg: "-- starting hand #328 (id: zbls2qv5dxml)  Pot Limit Omaha 5 Hi (dealer: Bacon) --", createdAt: "177982160000000" },
+  ];
+
+  const hand = parsePokerNowHandsFromLogs("table-1", entries)[0];
+  const bacon = hand.players.find((player) => player.playerAlias === "Bacon");
+  const dylan = hand.players.find((player) => player.playerAlias === "Dylan");
+  const ridley = hand.players.find((player) => player.playerAlias === "Ridley");
+
+  assert.equal(hand.isBombPot, true);
+  assert.deepEqual(hand.boardCards, ["6♦", "3♠", "Q♠", "Q♦", "2♣"]);
+  assert.deepEqual(hand.boardRunouts, [
+    ["6♦", "3♠", "Q♠", "Q♦", "2♣"],
+    ["T♦", "J♠", "5♦", "Q♣", "A♣"],
+  ]);
+  assert.equal(hand.potSize, 18);
+  assert.equal(round(hand.players.reduce((sum, player) => sum + player.profit, 0)), 0);
+  assert.equal(bacon?.profit, 10.5);
+  assert.equal(dylan?.profit, -7.5);
+  assert.equal(ridley?.profit, -3);
+  assert.equal(bacon?.vpip, false);
+  assert.equal(dylan?.vpip, false);
+  assert.equal(ridley?.vpip, false);
+  assert.equal(bacon?.pfr, false);
+});
+
+test("parsePokerNowHandsFromLogs tracks four-card double-board bomb pots with missing blinds", () => {
+  const entries: PokerNowLogEntry[] = [
+    { msg: "luke shows a 8♦.", createdAt: "177982170000024" },
+    { msg: "luke shows a J♦.", createdAt: "177982170000023" },
+    { msg: "-- ending hand #330 --", createdAt: "177982170000022" },
+    { msg: "luke collected 27.50 from pot", createdAt: "177982170000021" },
+    { msg: "Uncalled bet of 20.00 returned to luke", createdAt: "177982170000020" },
+    { msg: "Bacon folds", createdAt: "177982170000019" },
+    { msg: "luke bets 20.00", createdAt: "177982170000018" },
+    { msg: "Bacon checks", createdAt: "177982170000017" },
+    { msg: "River (second board): 6♦, 9♣, Q♦, K♦ [2♥]", createdAt: "177982170000016" },
+    { msg: "River: Q♥, 5♣, 5♥, J♠ [7♣]", createdAt: "177982170000015" },
+    { msg: "Bacon calls 7.50", createdAt: "177982170000014" },
+    { msg: "Dylan folds", createdAt: "177982170000013" },
+    { msg: "luke bets 7.50", createdAt: "177982170000012" },
+    { msg: "Bacon checks", createdAt: "177982170000011" },
+    { msg: "Turn (second board): 6♦, 9♣, Q♦ [K♦]", createdAt: "177982170000010" },
+    { msg: "Turn: Q♥, 5♣, 5♥ [J♠]", createdAt: "177982170000009" },
+    { msg: "Ridley folds", createdAt: "177982170000008" },
+    { msg: "Dylan checks", createdAt: "177982170000007" },
+    { msg: "luke checks", createdAt: "177982170000006" },
+    { msg: "Bacon checks", createdAt: "177982170000005" },
+    { msg: "Flop (second board):  [6♦, 9♣, Q♦]", createdAt: "177982170000004" },
+    { msg: "Flop:  [Q♥, 5♣, 5♥]", createdAt: "177982170000003" },
+    { msg: "luke calls 3.00 (bomb pot bet)", createdAt: "177982170000002" },
+    { msg: "Bacon calls 3.00 (bomb pot bet)", createdAt: "177982170000001" },
+    { msg: "Ridley calls 3.00 (bomb pot bet)", createdAt: "177982170000000" },
+    { msg: "Dylan posts a bet of 3.00 (bomb pot bet)", createdAt: "177982169999999" },
+    { msg: "luke posts a missing small blind of 0.50", createdAt: "177982169999998" },
+    { msg: "Player stacks: #1 Ridley (321.91) | #2 Bacon (372.04) | #9 luke (126.26) | #10 Dylan (230.18)", createdAt: "177982169999997" },
+    { msg: "-- starting hand #330 (id: hhy4sitaafxo)  Pot Limit Omaha Hi (dealer: Ridley) --", createdAt: "177982169999996" },
+  ];
+
+  const hand = parsePokerNowHandsFromLogs("table-1", entries)[0];
+  const luke = hand.players.find((player) => player.playerAlias === "luke");
+  const bacon = hand.players.find((player) => player.playerAlias === "Bacon");
+  const dylan = hand.players.find((player) => player.playerAlias === "Dylan");
+  const ridley = hand.players.find((player) => player.playerAlias === "Ridley");
+
+  assert.equal(hand.isBombPot, true);
+  assert.deepEqual(hand.boardRunouts, [
+    ["Q♥", "5♣", "5♥", "J♠", "7♣"],
+    ["6♦", "9♣", "Q♦", "K♦", "2♥"],
+  ]);
+  assert.equal(hand.potSize, 27.5);
+  assert.equal(round(hand.players.reduce((sum, player) => sum + player.profit, 0)), 0);
+  assert.equal(luke?.profit, 16.5);
+  assert.equal(bacon?.profit, -10.5);
+  assert.equal(dylan?.profit, -3);
+  assert.equal(ridley?.profit, -3);
+  assert.equal(luke?.vpip, false);
+  assert.equal(dylan?.vpip, false);
+});
+
 function round(value: number) {
   return Number(value.toFixed(2));
 }
