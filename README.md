@@ -263,7 +263,7 @@ Use these commands to audit mappings:
 /player-show user:<Discord user>
 ```
 
-Admin-only player commands require either Discord `Manage Server` permission or the hard-coded admin user id in `apps/bot/src/discord/commands.ts`.
+Admin-only player and club tracking commands require either Discord `Manage Server` permission or the hard-coded admin user id in `apps/bot/src/discord/commands.ts`. Live chip movement commands are stricter and require the hard-coded admin user id.
 
 ## Discord Commands
 
@@ -285,8 +285,16 @@ Admin commands:
 
 - `/tracking-remove table_id:<id-or-link>`: owner-only destructive removal for one tracked table and its stored data
 - `/tracking-debug`: show BullMQ queue/debug state
+- `/club-track-add club_id:<id> player_id:<token> slug:<slug>`: register a PokerNow club and track all current games
+- `/club-track-refresh club_id:<id>`: refresh and track games for one registered club
+- `/club-track-refresh-all`: refresh and track games for every registered club
+- `/club-track-list`: list registered PokerNow clubs and their last sync status
+- `/club-chips-add club_id:<id> pokernow_user_id:<id> amount:<chips>`: owner-only live PokerNow chip add using `POKERNOW_COOKIE_HEADER`
+- `/club-chips-remove club_id:<id> pokernow_user_id:<id> amount:<chips>`: owner-only live PokerNow chip remove using `POKERNOW_COOKIE_HEADER`
 - `/player-create user:<user> [display_name:<name>]`: create or update a Discord player's display name
 - `/player-alias-add user:<user> alias:<alias>`: assign one or more default alias owners; comma-separated aliases are supported
+- `/player-pokernow-account-add user:<user> account:<id-or-url>`: assign a PokerNow account id as an alias-like mapping
+- `/player-pokernow-account-remove account:<id-or-url>`: remove a PokerNow account id mapping
 - `/player-alias-remove alias:<alias>`: remove default alias mapping
 - `/player-alias-set-default alias:<alias> user:<user>`: set default alias owner
 - `/player-override-set table_id:<id> alias:<alias> user:<user>`: set table-specific owner
@@ -341,7 +349,7 @@ Optional variables:
 
 ```env
 DISCORD_GUILD_IDS=<comma-separated server ids>
-POKERNOW_COOKIE_HEADER=
+POKERNOW_COOKIE_HEADER=<required for club refresh and live chip commands>
 POKERNOW_QUERY_PLAYER_TOKEN=
 SENTRY_DSN=
 PORT=3000

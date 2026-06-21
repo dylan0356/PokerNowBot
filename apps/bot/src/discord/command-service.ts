@@ -1,13 +1,18 @@
-import { normalizePokerNowAlias, prisma, resolveAliasOwnersForTable } from "@pokernow/db";
+import { normalizePokerNowAlias, prisma, resolveAliasOwnersForTable, syncPokerNowClubs, upsertPokerNowClub } from "@pokernow/db";
 import { calculateActionStats } from "@pokernow/stats";
 import { Queue } from "bullmq";
-import { queueNames, toBullConnection } from "@pokernow/shared";
+import { PokerNowInternalClient, pokerNowAccountAlias, queueNames, toBullConnection, toPokerNowChipCents } from "@pokernow/shared";
 import type { HandednessBucket } from "@pokernow/shared";
 import { buildProfitGraphUrl, formatPercent } from "./formatting.js";
 
 export interface StatsFilter {
   handedness?: HandednessBucket;
   gameType?: string;
+}
+
+export interface PokerNowInternalConfig {
+  baseUrl: string;
+  cookieHeader?: string;
 }
 
 export class CommandService {
@@ -92,6 +97,78 @@ export class CommandService {
     }
 
     return { profile, aliases };
+  }
+
+  async addPokerNowAccountAliasToDiscordUser(guildId: string, discordUserId: string, fallbackDisplayName: string, accountIdOrUrl: string) {
+    const alias = pokerNowAccountAlias(accountIdOrUrl);
+    const profile = await this.addAliasToDiscordUser(guildId, discordUserId, fallbackDisplayName, alias);
+    return { profile, alias };
+  }
+
+  async removePokerNowAccountAlias(guildId: string, accountIdOrUrl: string) {
+    return this.removeAlias(guildId, pokerNowAccountAlias(accountIdOrUrl));
+  }
+
+  async moveClubChips(config: PokerNowInternalConfig, action: "add" | "remove", clubId: string, pokerNowUserId: string, amount: number) {
+    const client = new PokerNowInternalClient(config);
+    const amountCents = toPokerNowChipCents(amount);
+    const result =
+      action === "add"
+        ? await client.addClubChips(clubId.trim(), pokerNowUserId.trim(), amountCents)
+        : await client.removeClubChips(clubId.trim(), pokerNowUserId.trim(), amountCents);
+    return { ...result, amountCents };
+  }
+
+  async addClubTracking(
+    redisUrl: string,
+    config: PokerNowInternalConfig,
+    guildId: string,
+    createdById: string,
+    clubId: string,
+    refreshPlayerId: string,
+    slug: string,
+  ) {
+    await upsertPokerNowClub({
+      guildId,
+      clubId: clubId.trim(),
+      refreshPlayerId: refreshPlayerId.trim(),
+      slug: slug.trim(),
+      createdById,
+    });
+
+    return syncPokerNowClubs({
+      redisUrl,
+      baseUrl: config.baseUrl,
+      cookieHeader: config.cookieHeader,
+      guildId,
+      clubId: clubId.trim(),
+    });
+  }
+
+  async refreshClubTracking(redisUrl: string, config: PokerNowInternalConfig, guildId: string, clubId?: string) {
+    return syncPokerNowClubs({
+      redisUrl,
+      baseUrl: config.baseUrl,
+      cookieHeader: config.cookieHeader,
+      guildId,
+      clubId: clubId?.trim(),
+    });
+  }
+
+  async listPokerNowClubs(guildId: string) {
+    const clubs = await prisma.pokerNowClub.findMany({
+      where: { guildId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return clubs.map((club) => ({
+      clubId: club.clubId,
+      slug: club.slug,
+      enabled: club.enabled,
+      lastSyncedAt: club.lastSyncedAt,
+      lastSyncStatus: club.lastSyncStatus,
+      lastGameCount: gameCountFromSyncStatus(club.lastSyncStatus),
+    }));
   }
 
   async removeAlias(guildId: string, alias: string) {
@@ -1327,6 +1404,11 @@ function calculateSessionStats(entries: SessionHandEntry[]) {
 
 function rate(count: number, opportunities: number) {
   return opportunities === 0 ? 0 : count / opportunities;
+}
+
+function gameCountFromSyncStatus(status: string | null) {
+  const match = status?.match(/^ok:(\d+):\d+$/);
+  return match ? Number(match[1]) : null;
 }
 
 function toHeadToHeadEntry(

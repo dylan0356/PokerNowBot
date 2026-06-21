@@ -27,7 +27,7 @@ async function main() {
   const commandService = new CommandService();
 
   registerMessageHandler(client, trackingService);
-  registerInteractionHandler(client, commandService, config.redisUrl);
+  registerInteractionHandler(client, commandService, config);
 
   client.once(Events.ClientReady, () => {
     logger.info({ botUser: client.user?.tag }, "Discord bot ready");

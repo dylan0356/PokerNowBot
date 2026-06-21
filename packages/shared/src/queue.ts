@@ -6,6 +6,7 @@ export const queueNames = {
   monthlySnapshot: "monthly-snapshot",
   rebuildSessionFromRaw: "rebuild-session-from-raw",
   reconcilePokerNowHand: "reconcile-pokernow-hand",
+  syncPokerNowClubs: "sync-pokernow-clubs",
 } as const;
 
 export interface TrackTableJob {
@@ -37,4 +38,9 @@ export interface ReconcilePokerNowHandJob {
   trackedTableId: string;
   tableId: string;
   handNumber?: number;
+}
+
+export interface SyncPokerNowClubsJob {
+  guildId?: string;
+  clubId?: string;
 }
