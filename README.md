@@ -271,6 +271,9 @@ User commands:
 
 - `/link-pokernow alias:<alias>`: link your Discord user to a PokerNow alias
 - `/unlink-pokernow alias:<alias>`: unlink one of your PokerNow aliases
+- `/link-pokernow-aliases aliases:<alias1>, <alias2>`: link multiple PokerNow aliases to yourself
+- `/link-pokernow-account account:<id-or-url>`: link your PokerNow account id for club chip commands
+- `/unlink-pokernow-account account:<id-or-url>`: unlink one of your PokerNow account ids
 - `/stats [user] [handedness] [game_type]`: show stats for yourself or another Discord user; pages by game type and defaults to heads up and multiway
 - `/leaderboard [handedness] [game_type]`: show leaderboard; pages by game type and defaults to separate heads up and multiway sections
 - `/sessions [user]`: show recent sessions
@@ -289,12 +292,12 @@ Admin commands:
 - `/club-track-refresh club_id:<id>`: refresh and track games for one registered club
 - `/club-track-refresh-all`: refresh and track games for every registered club
 - `/club-track-list`: list registered PokerNow clubs and their last sync status
-- `/club-chips-add club_id:<id> pokernow_user_id:<id> amount:<chips>`: owner-only live PokerNow chip add using `POKERNOW_COOKIE_HEADER`
-- `/club-chips-remove club_id:<id> pokernow_user_id:<id> amount:<chips>`: owner-only live PokerNow chip remove using `POKERNOW_COOKIE_HEADER`
+- `/add-chips user:<Discord user> amount:<chips> [club_id:<id>]`: owner-only live PokerNow chip add using the user's PokerNow account mapping
+- `/remove-chips user:<Discord user> amount:<chips> [club_id:<id>]`: owner-only live PokerNow chip remove using the user's PokerNow account mapping
 - `/player-create user:<user> [display_name:<name>]`: create or update a Discord player's display name
 - `/player-alias-add user:<user> alias:<alias>`: assign one or more default alias owners; comma-separated aliases are supported
-- `/player-pokernow-account-add user:<user> account:<id-or-url>`: assign a PokerNow account id as an alias-like mapping
-- `/player-pokernow-account-remove account:<id-or-url>`: remove a PokerNow account id mapping
+- `/player-pokernow-account-add user:<user> account:<id-or-url>`: admin override to assign a PokerNow account id as an alias-like mapping
+- `/player-pokernow-account-remove account:<id-or-url>`: admin override to remove a PokerNow account id mapping
 - `/player-alias-remove alias:<alias>`: remove default alias mapping
 - `/player-alias-set-default alias:<alias> user:<user>`: set default alias owner
 - `/player-override-set table_id:<id> alias:<alias> user:<user>`: set table-specific owner

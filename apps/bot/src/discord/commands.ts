@@ -33,6 +33,15 @@ const commands = [
   new SlashCommandBuilder().setName("unlink-pokernow").setDescription("Unlink a PokerNow alias").addStringOption((option) =>
     option.setName("alias").setDescription("PokerNow screen name").setRequired(true),
   ),
+  new SlashCommandBuilder().setName("link-pokernow-aliases").setDescription("Link one or more PokerNow aliases to yourself").addStringOption((option) =>
+    option.setName("aliases").setDescription("PokerNow aliases, comma-separated").setRequired(true),
+  ),
+  new SlashCommandBuilder().setName("link-pokernow-account").setDescription("Link your PokerNow account id").addStringOption((option) =>
+    option.setName("account").setDescription("PokerNow player id, numeric user id, or player URL").setRequired(true),
+  ),
+  new SlashCommandBuilder().setName("unlink-pokernow-account").setDescription("Unlink your PokerNow account id").addStringOption((option) =>
+    option.setName("account").setDescription("PokerNow player id, numeric user id, or player URL").setRequired(true),
+  ),
   new SlashCommandBuilder()
     .setName("stats")
     .setDescription("Show player stats")
@@ -74,17 +83,17 @@ const commands = [
     .addStringOption((option) => option.setName("table_id").setDescription("PokerNow game link or table id").setRequired(true)),
   new SlashCommandBuilder().setName("tracking-debug").setDescription("Show queue and tracking debug info for this server"),
   new SlashCommandBuilder()
-    .setName("club-chips-add")
-    .setDescription("Owner-only: add chips to a PokerNow club player")
-    .addStringOption((option) => option.setName("club_id").setDescription("PokerNow club id").setRequired(true))
-    .addStringOption((option) => option.setName("pokernow_user_id").setDescription("PokerNow numeric user id").setRequired(true))
-    .addNumberOption((option) => option.setName("amount").setDescription("Chip amount, for example 100").setRequired(true).setMinValue(0.01)),
+    .setName("add-chips")
+    .setDescription("Owner-only: add chips to a linked Discord player")
+    .addUserOption((option) => option.setName("user").setDescription("Linked Discord player").setRequired(true))
+    .addNumberOption((option) => option.setName("amount").setDescription("Chip amount, for example 100").setRequired(true).setMinValue(0.01))
+    .addStringOption((option) => option.setName("club_id").setDescription("Optional PokerNow club id").setRequired(false)),
   new SlashCommandBuilder()
-    .setName("club-chips-remove")
-    .setDescription("Owner-only: remove chips from a PokerNow club player")
-    .addStringOption((option) => option.setName("club_id").setDescription("PokerNow club id").setRequired(true))
-    .addStringOption((option) => option.setName("pokernow_user_id").setDescription("PokerNow numeric user id").setRequired(true))
-    .addNumberOption((option) => option.setName("amount").setDescription("Chip amount, for example 100").setRequired(true).setMinValue(0.01)),
+    .setName("remove-chips")
+    .setDescription("Owner-only: remove chips from a linked Discord player")
+    .addUserOption((option) => option.setName("user").setDescription("Linked Discord player").setRequired(true))
+    .addNumberOption((option) => option.setName("amount").setDescription("Chip amount, for example 100").setRequired(true).setMinValue(0.01))
+    .addStringOption((option) => option.setName("club_id").setDescription("Optional PokerNow club id").setRequired(false)),
   new SlashCommandBuilder()
     .setName("club-track-add")
     .setDescription("Add or update a PokerNow club and track all current games")
@@ -195,6 +204,26 @@ async function routeCommand(interaction: ChatInputCommandInteraction, commandSer
         const alias = interaction.options.getString("alias", true);
         const removed = await commandService.unlinkAlias(guildId, interaction.user.id, alias);
         await interaction.reply(removed ? `Unlinked PokerNow alias \`${alias}\`` : `Alias \`${alias}\` was not linked to you`);
+        return;
+      }
+      case "link-pokernow-aliases": {
+        const aliasesInput = interaction.options.getString("aliases", true);
+        const result = await commandService.addAliasesToDiscordUser(guildId, interaction.user.id, displayNameForUser(interaction.user), aliasesInput);
+        await interaction.reply(
+          `Linked ${result.aliases.length} PokerNow alias(es) to you: ${result.aliases.map((alias) => `\`${alias}\``).join(", ")}`,
+        );
+        return;
+      }
+      case "link-pokernow-account": {
+        const account = interaction.options.getString("account", true);
+        const result = await commandService.addPokerNowAccountAliasToDiscordUser(guildId, interaction.user.id, displayNameForUser(interaction.user), account);
+        await interaction.reply(`Linked PokerNow account \`${result.alias}\` to you`);
+        return;
+      }
+      case "unlink-pokernow-account": {
+        const account = interaction.options.getString("account", true);
+        const removed = await commandService.unlinkPokerNowAccountAlias(guildId, interaction.user.id, account);
+        await interaction.reply(removed ? "Unlinked PokerNow account" : "That PokerNow account was not linked to you");
         return;
       }
       case "stats": {
@@ -419,16 +448,16 @@ async function routeCommand(interaction: ChatInputCommandInteraction, commandSer
         });
         return;
       }
-      case "club-chips-add":
-      case "club-chips-remove": {
+      case "add-chips":
+      case "remove-chips": {
         ensureOwner(interaction);
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const clubId = interaction.options.getString("club_id", true);
-        const pokerNowUserId = interaction.options.getString("pokernow_user_id", true);
+        const user = interaction.options.getUser("user", true);
         const amount = interaction.options.getNumber("amount", true);
-        const action = interaction.commandName === "club-chips-add" ? "add" : "remove";
-        const result = await commandService.moveClubChips(pokerNowConfig, action, clubId, pokerNowUserId, amount);
-        await interaction.editReply(formatChipMovementResponse(action, clubId, pokerNowUserId, amount, result));
+        const clubId = interaction.options.getString("club_id") ?? undefined;
+        const action = interaction.commandName === "add-chips" ? "add" : "remove";
+        const result = await commandService.moveClubChips(pokerNowConfig, action, guildId, user.id, amount, clubId);
+        await interaction.editReply(formatChipMovementResponse(action, user, amount, result));
         return;
       }
       case "club-track-add": {
@@ -621,15 +650,16 @@ function tableIdFromInput(input: string) {
 
 function formatChipMovementResponse(
   action: "add" | "remove",
-  clubId: string,
-  pokerNowUserId: string,
+  user: User,
   amount: number,
   result: Awaited<ReturnType<CommandService["moveClubChips"]>>,
 ) {
   return [
     `PokerNow chip ${action} submitted`,
-    `club: \`${clubId}\``,
-    `user: \`${pokerNowUserId}\``,
+    `discord user: <@${user.id}>`,
+    `player: \`${result.profile.displayName}\``,
+    `club: \`${result.clubSlug}\` (${result.clubId})`,
+    `PokerNow user: \`${result.pokerNowUserId}\``,
     `amount: ${amount} (${result.amountCents} cents)`,
     `movement: ${result.movementId ? `\`${result.movementId}\`` : "unknown"}`,
     `balance: ${result.chipsBalance ?? "unknown"}`,

@@ -109,14 +109,49 @@ export class CommandService {
     return this.removeAlias(guildId, pokerNowAccountAlias(accountIdOrUrl));
   }
 
-  async moveClubChips(config: PokerNowInternalConfig, action: "add" | "remove", clubId: string, pokerNowUserId: string, amount: number) {
+  async unlinkPokerNowAccountAlias(guildId: string, discordUserId: string, accountIdOrUrl: string) {
+    return this.unlinkAlias(guildId, discordUserId, pokerNowAccountAlias(accountIdOrUrl));
+  }
+
+  async moveClubChips(
+    config: PokerNowInternalConfig,
+    action: "add" | "remove",
+    guildId: string,
+    discordUserId: string,
+    amount: number,
+    clubId?: string,
+  ) {
     const client = new PokerNowInternalClient(config);
     const amountCents = toPokerNowChipCents(amount);
+    const [club, profile] = await Promise.all([
+      this.resolvePokerNowClub(guildId, clubId),
+      prisma.playerProfile.findUnique({
+        where: {
+          guildId_discordUserId: {
+            guildId,
+            discordUserId,
+          },
+        },
+        include: {
+          aliases: true,
+        },
+      }),
+    ]);
+
+    if (!profile) {
+      throw new Error("That Discord user does not have a player record yet. Use /player-pokernow-account-add first.");
+    }
+
+    const pokerNowUserId = profile.aliases.find((alias) => alias.normalizedAlias.startsWith("pokernow:"))?.alias.replace(/^pokernow:/i, "");
+    if (!pokerNowUserId) {
+      throw new Error("That Discord user does not have a PokerNow account mapping. Use /player-pokernow-account-add first.");
+    }
+
     const result =
       action === "add"
-        ? await client.addClubChips(clubId.trim(), pokerNowUserId.trim(), amountCents)
-        : await client.removeClubChips(clubId.trim(), pokerNowUserId.trim(), amountCents);
-    return { ...result, amountCents };
+        ? await client.addClubChips(club.clubId, pokerNowUserId, amountCents)
+        : await client.removeClubChips(club.clubId, pokerNowUserId, amountCents);
+    return { ...result, amountCents, clubId: club.clubId, clubSlug: club.slug, pokerNowUserId, profile };
   }
 
   async addClubTracking(
@@ -1190,6 +1225,33 @@ export class CommandService {
     }
 
     return trackedTable;
+  }
+
+  private async resolvePokerNowClub(guildId: string, clubId?: string) {
+    const club = clubId
+      ? await prisma.pokerNowClub.findUnique({
+          where: {
+            guildId_clubId: {
+              guildId,
+              clubId: clubId.trim(),
+            },
+          },
+        })
+      : await prisma.pokerNowClub.findFirst({
+          where: {
+            guildId,
+            enabled: true,
+          },
+          orderBy: {
+            createdAt: "asc",
+          },
+        });
+
+    if (!club) {
+      throw new Error(clubId ? `PokerNow club \`${clubId.trim()}\` is not registered` : "No PokerNow club is registered for this server");
+    }
+
+    return club;
   }
 
   private async findAvailableDisplayName(guildId: string, requestedDisplayName: string, discriminator: string, currentProfileId?: string) {
